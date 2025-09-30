@@ -1,0 +1,3012 @@
+// Arena System for Momo Character
+// Zero-player RPG inspired by Progress Quest
+
+class ArenaSystem {
+    constructor() {
+        this.lastRenderTime = 0;
+        this.lastActivityTime = 0;
+        this.currentArenaTooltip = null;
+        this.tooltipTimer = null;
+        this.tooltipHideTimer = null;
+        this.currentSimpleTooltip = null;
+        this.simpleTooltipHideTimer = null;
+        
+        // Bind tooltip event handlers once to maintain references
+        this.boundHandleStatTooltip = this.handleStatTooltip.bind(this);
+        this.boundHandleEquipmentTooltip = this.handleEquipmentTooltip.bind(this);
+        this.boundHandleProgressTooltip = this.handleProgressTooltip.bind(this);
+        this.boundDelayedHideTooltip = this.delayedHideTooltip.bind(this);
+        
+        // Status management to prevent flickering
+        this.currentStatus = null;
+        this.statusUpdateTimer = null;
+        this.lastStatusUpdate = 0;
+        
+        // Tooltip setup management
+        this.tooltipsSetupComplete = false;
+        this.setupInProgress = false;
+        
+        // Render state management
+        this.isInitialSetup = false;
+        this.staticContentSetup = false;
+        
+        // Initialize arena constants
+        this.initializeData();
+        
+        // Add global document event listener for defensive tooltip cleanup
+        this.setupGlobalEventHandlers();
+    }
+    
+    initializeData() {
+        // Arena stat descriptions with tooltips
+        this.statDescriptions = {
+            sila: {
+                title: "Siła",
+                description: "Każdy punkt siły dodaje +1 do mocy bojowej.\nMięśnie Momo napinają się pod wpływem intensywnego treningu.",
+                effect: "Zwiększa obrażenia w walce i szanse na sukces w trudnych questach"
+            },
+            zrecznosc: {
+                title: "Zręczność", 
+                description: "Każdy punkt zręczności dodaje +1 do mocy bojowej.\nGracjowne ruchy Momo hipnotyzują przeciwników przed ciosem.",
+                effect: "Wpływa na szanse na unikanie ataków i znalezienie lepszych przedmiotów"
+            },
+            inteligencja: {
+                title: "Inteligencja",
+                description: "Każdy punkt inteligencji dodaje +1 do mocy bojowej.\nMądre spojrzenie Momo przewiduje intencje wrogów.",
+                effect: "Pozwala na lepsze rozpoznanie przeciwników i efektywniejsze wykorzystanie magicznych artefaktów"
+            },
+            szczescie: {
+                title: "Szczęście",
+                description: "Każdy punkt szczęścia dodaje +1 do mocy bojowej.\nBogowie uśmiechają się do Momo w krytycznych momentach.",
+                effect: "Zwiększa szanse na krytyczne trafienia, znalezienie rzadkich przedmiotów i unikanie klątw"
+            },
+            cyce: {
+                title: "Cyce",
+                description: "Każdy punkt dodaje +2 do mocy bojowej (maksimum 10).\nPerfekcyjne piersi Momo rozpraszają przeciwników i dodają jej pewności siebie.",
+                effect: "Naturalna broń uwodzenia i źródło niezmąconej pewności siebie"
+            },
+            dupa: {
+                title: "Dupa", 
+                description: "Każdy punkt dodaje +1.5 do mocy bojowej (maksimum 10).\nDoskonale wyrzeźbiona pupa zwiększa mobilność i grację w walce.",
+                effect: "Wpływa na zwinność i zdolność do unikania ataków"
+            },
+            cipka: {
+                title: "Status Cipki",
+                description: "Obecny stan intymnych części Momo. Może się zmieniać w zależności od doświadczeń w arenie.",
+                effect: "Może wpływać na interakcje z niektórymi przeciwnikami"
+            },
+            cipka_sensitivity: {
+                title: "Wrażliwość",
+                description: "Poziom wrażliwości cipki Momo. Wpływa na intensywność doznań podczas walki.",
+                effect: "Wyższa wrażliwość = większa podatność na specjalne ataki"
+            },
+            cipka_wetness: {
+                title: "Wilgotność",
+                description: "Poziom podniecenia cipki Momo. Zwiększa się podczas intensywnych walk.",
+                effect: "Wpływa na niektóre interakcje z przeciwnikami"
+            },
+            cipka_corruption: {
+                title: "Korupcja",
+                description: "Poziom moralnego upadku cipki Momo. Zwiększa się przy kontakcie z demonami.",
+                effect: "Może odblokowywać specjalne zdolności ale zwiększa ryzyko"
+            },
+            cipka_magic_resistance: {
+                title: "Odporność Magiczna",
+                description: "Ochrona przed magicznymi efektami wpływającymi na cipkę Momo.",
+                effect: "Zmniejsza ryzyko przekleństw i negatywnych efektów"
+            },
+            hp: {
+                title: "Kondycja (HP)",
+                description: "Fizyczna i mentalna wytrzymałość Momo. Spada podczas walki i wymaga odpoczynku gdy osiągnie zero.",
+                effect: "Powolny spadek podczas aktywności. Regeneruje się podczas odpoczynku."
+            },
+            level: {
+                title: "Poziom",
+                description: "Doświadczenie bojowe Momo. Zwiększa się wraz z ukończonymi questami i pozwala na zdobycie lepszego ekwipunku.",
+                effect: "Wyższy poziom odblokowuje trudniejsze questy z lepszymi nagrodami"
+            },
+            gold: {
+                title: "Złoto",
+                description: "Bogactwo zdobyte w arenie. Można je wykorzystać do różnych celów w grze.",
+                effect: "Zdobywane za ukończone questy i kamienie milowe"
+            },
+            combat_power: {
+                title: "Moc Bojowa",
+                description: "Łączna siła bojowa Momo. Składa się z: Siła + Zręczność + Inteligencja + Szczęście + (Cyce × 2) + (Dupa × 1.5) + moc ekwipunku. Każdy punkt fizycznych atutów ma większy wpływ na walkę.",
+                effect: "Wyższa moc bojowa = większe szanse na sukces w trudnych questach i lepsze nagrody"
+            },
+            status: {
+                title: "Status",
+                description: "Obecny stan Momo w arenie. Może być gotowa do walki, odpoczywać lub być wyczerpana.",
+                effect: "Wyczerpanie wymaga odpoczynku przed kontynuowaniem działań"
+            },
+            experience: {
+                title: "Doświadczenie",
+                description: "Punkty doświadczenia zdobyte w walkach. Po zebraniu wystarczającej ilości Momo awansuje na wyższy poziom.",
+                effect: "Każdy quest daje doświadczenie proporcjonalne do trudności"
+            },
+            quest_progress: {
+                title: "Postęp Questa",
+                description: "Aktualna aktywność Momo w arenie. Pokazuje, jak daleko zaszła w bieżącym zadaniu.",
+                effect: "Po ukończeniu questa otrzymuje nagrodę i zaczyna nowy"
+            },
+            quests_completed: {
+                title: "Ukończone Questy",
+                description: "Łączna liczba zadań, które Momo ukończyła w arenie. Każdy quest zwiększa jej doświadczenie i reputation.",
+                effect: "Co 10 ukończonych questów otrzymujesz bonus złota jako nagrodę za postęp"
+            },
+            total_deaths: {
+                title: "Liczba Śmierci",
+                description: "Ile razy Momo uległa w arenie. Każda porażka jest lekcją, która ją wzmacnia na przyszłość.",
+                effect: "Śmierci nie mają trwałych kar, ale mogą wpływać na niektóre specjalne wydarzenia"
+            },
+            items_found: {
+                title: "Znalezione Przedmioty",
+                description: "Liczba przedmiotów, które Momo zdobyła podczas swoich przygód w arenie.",
+                effect: "Lepszy ekwipunek zwiększa moc bojową i szanse na sukces w questach"
+            },
+            statystyki_bojowe: {
+                title: "Statystyki Bojowe",
+                description: "Główne umiejętności bojowe Momo. Każda statystyka wpływa na jej moc bojową i szanse na sukces w arenie.",
+                effect: "Statystyki rosną poprzez walkę i ukończone questy. Wyższe wartości = lepsze wyniki w arenie"
+            },
+            ekwipunek: {
+                title: "Ekwipunek",
+                description: "Przedmioty, które Momo nosi w arenie. Każdy element ekwipunku dodaje moc bojową i specjalne bonusy.",
+                effect: "Lepszy ekwipunek znacząco zwiększa szanse na sukces w trudnych questach"
+            },
+            atuty_fizyczne: {
+                title: "Atuty Fizyczne",
+                description: "Fizyczne walory Momo, które wpływają na jej moc bojową. Cyce mają podwójny wpływ (×2), a dupa półtorakrotny (×1.5).",
+                effect: "Każdy punkt fizycznych atutów ma większy wpływ na walkę niż zwykłe statystyki"
+            },
+            detale_cipki: {
+                title: "Detale Intymne",
+                description: "Stan intymnych części Momo, który zmienia się w zależności od doświadczeń w arenie i wpływa na niektóre interakcje.",
+                effect: "Różne stany mogą dawać bonusy lub specjalne efekty podczas walk i wydarzeń"
+            },
+            rekord: {
+                title: "Rekord",
+                description: "Statystyki osiągnięć Momo w arenie. Pokazują jej doświadczenie, porażki i zdobyczne.",
+                effect: "Każde 10 ukończonych questów daje bonus złota. Przedmioty i śmierci wpływają na niektóre wydarzenia"
+            }
+        };
+
+        // Equipment descriptions
+        this.equipmentDescriptions = {
+            weapon: {
+                title: "Broń",
+                description: "Główne narzędzie bojowe Momo. Zwiększa jej siłę ataku i szanse na sukces w questach."
+            },
+            armor: {
+                title: "Zbroja",
+                description: "Ochrona dla ciała Momo. Redukuje obrażenia otrzymywane podczas walki."
+            },
+            accessory: {
+                title: "Dodatek",
+                description: "Dodatkowe wyposażenie wspierające Momo w walce. Może dawać specjalne bonusy."
+            },
+            artefakt: {
+                title: "Artefakt",
+                description: "Magiczny przedmiot o potężnych właściwościach. Dostarcza unikalne efekty bojowe."
+            }
+        };
+        
+        // Effect descriptions for magical items
+        this.effectDescriptions = {
+            hp_regen: "Regeneruje HP podczas walki",
+            stamina_boost: "Zwiększa wytrzymałość, zmniejsza spadek HP",
+            mana_shield: "Tworzy magiczną tarczę absorbującą obrażenia",
+            hp_boost: "Zwiększa maksymalne HP o 25%",
+            fear_aura: "Przeciwnicy są osłabieni strachem",
+            life_drain: "Wysysa życie z przeciwników podczas walki"
+        };
+        
+        // Available quests
+        this.quests = [
+            // Difficulty 1-3: Easy quests with 3 stages
+            { 
+                name: "Polowanie na Ślimaków", 
+                monster: "Ślimak Ogrodowy", 
+                difficulty: 1,
+                objectives: [
+                    { 
+                        name: "Rekonesans Terenu", 
+                        description: "Obserwowanie i mapowanie terenu łowów", 
+                        type: "scout",
+                        target: 3,
+                        current: 0,
+                        targetName: "obserwacji",
+                        progressWeight: 25,
+                        perActionReward: { gold: 1, exp: 0.5 },
+                        completionReward: { gold: 5, exp: 2 },
+                        actionText: "Obserwacja obszaru"
+                    },
+                    { 
+                        name: "Eliminacja Małych Ślimaków", 
+                        description: "Polowanie na małe ślimaki w okolicy", 
+                        type: "hunt",
+                        target: 8,
+                        current: 0,
+                        targetName: "małych ślimaków",
+                        progressWeight: 45,
+                        perActionReward: { gold: 2, exp: 1 },
+                        completionReward: { gold: 15, exp: 8 },
+                        actionText: "Zabicie małego ślimaka"
+                    },
+                    { 
+                        name: "Pojedynek z Wodzem", 
+                        description: "Finalna walka ze Ślimakiem Ogrodowym", 
+                        type: "boss",
+                        target: 1,
+                        current: 0,
+                        targetName: "boss",
+                        progressWeight: 30,
+                        perActionReward: { gold: 0, exp: 0 },
+                        completionReward: { gold: 25, exp: 15, itemChance: 0.7 },
+                        actionText: "Faza walki z bossem"
+                    }
+                ],
+                finalReward: { gold: 50, exp: 30, itemChance: 0.8 }
+            },
+            { 
+                name: "Stróż Biblioteki", 
+                monster: "Książkowy Golem", 
+                difficulty: 2,
+                objectives: [
+                    { 
+                        name: "Infiltracja Biblioteki", 
+                        description: "Skradanie się przez korytarze biblioteki", 
+                        type: "scout",
+                        target: 4,
+                        current: 0,
+                        targetName: "infiltracji",
+                        progressWeight: 25,
+                        perActionReward: { gold: 2, exp: 1 },
+                        completionReward: { gold: 8, exp: 4 },
+                        actionText: "Sekretne przejście"
+                    },
+                    { 
+                        name: "Poszukiwania Wskazówek", 
+                        description: "Znajdowanie magicznych ksiąg z informacjami o Golemie", 
+                        type: "gather",
+                        target: 6,
+                        current: 0,
+                        targetName: "ksiąg",
+                        progressWeight: 45,
+                        perActionReward: { gold: 3, exp: 1.5 },
+                        completionReward: { gold: 18, exp: 12, itemChance: 0.4 },
+                        actionText: "Znalezienie wskazówki"
+                    },
+                    { 
+                        name: "Konfrontacja z Golemem", 
+                        description: "Epicki pojedynek z Książkowym Golemem", 
+                        type: "boss",
+                        target: 1,
+                        current: 0,
+                        targetName: "boss",
+                        progressWeight: 30,
+                        perActionReward: { gold: 0, exp: 0 },
+                        completionReward: { gold: 35, exp: 20, itemChance: 0.75 },
+                        actionText: "Faza walki z bossem"
+                    }
+                ],
+                finalReward: { gold: 65, exp: 40, itemChance: 0.85 }
+            },
+            { 
+                name: "Szef Kuchni", 
+                monster: "Wściekły Kucharz", 
+                difficulty: 3,
+                objectives: [
+                    { 
+                        name: "Obserwacja Kucharza", 
+                        description: "Studiowanie nawyków i rozporządków kuchni", 
+                        type: "scout",
+                        target: 5,
+                        current: 0,
+                        targetName: "obserwacji",
+                        progressWeight: 25,
+                        perActionReward: { gold: 3, exp: 1.5 },
+                        completionReward: { gold: 12, exp: 6 },
+                        actionText: "Obserwacja aktywności"
+                    },
+                    { 
+                        name: "Sabotaż Kuchni", 
+                        description: "Psowanie wyposażenia i składników kuchni", 
+                        type: "hunt",
+                        target: 10,
+                        current: 0,
+                        targetName: "sabotaży",
+                        progressWeight: 45,
+                        perActionReward: { gold: 4, exp: 2 },
+                        completionReward: { gold: 25, exp: 15, itemChance: 0.5 },
+                        actionText: "Akt sabotażu"
+                    },
+                    { 
+                        name: "Pojedynek z Kucharzem", 
+                        description: "Finalna konfrontacja z Wściekłym Kucharzem", 
+                        type: "boss",
+                        target: 1,
+                        current: 0,
+                        targetName: "boss",
+                        progressWeight: 30,
+                        perActionReward: { gold: 0, exp: 0 },
+                        completionReward: { gold: 45, exp: 25, itemChance: 0.8 },
+                        actionText: "Faza walki z bossem"
+                    }
+                ],
+                finalReward: { gold: 85, exp: 50, itemChance: 0.9 }
+            },
+            
+            // Difficulty 4-6: Medium quests with 4 stages
+            { 
+                name: "Władca Myszy", 
+                monster: "Król Szczurów", 
+                difficulty: 4,
+                stages: [
+                    { name: "Tropienie", description: "Wyszukiwanie śladów szczurów", duration: 45, questProgress: 20, rewards: { gold: 8, exp: 3 }, type: "scout" },
+                    { name: "Tępienie", description: "Eliminacja szczurzych strażników", duration: 70, questProgress: 35, rewards: { gold: 12, exp: 6, itemChance: 0.4 }, type: "hunt" },
+                    { name: "Infiltracja", description: "Wkraczanie do szczurzego królestwa", duration: 60, questProgress: 25, rewards: { gold: 10, exp: 4, itemChance: 0.3 }, type: "infiltrate" },
+                    { name: "Koronacja", description: "Obalenie Króla Szczurów", duration: 105, questProgress: 20, rewards: { gold: 30, exp: 15, itemChance: 0.8 }, type: "boss" }
+                ]
+            },
+            { 
+                name: "Strażnik Skarbca", 
+                monster: "Żelazny Minotaur", 
+                difficulty: 5,
+                stages: [
+                    { name: "Zwiady", description: "Badanie zabezpieczeń skarbca", duration: 50, questProgress: 20, rewards: { gold: 10, exp: 4 }, type: "scout" },
+                    { name: "Pułapki", description: "Rozbrajanie mechanizmów obronnych", duration: 80, questProgress: 35, rewards: { gold: 15, exp: 8, itemChance: 0.45 }, type: "gather" },
+                    { name: "Przygotowania", description: "Szukanie słabości minotaura", duration: 65, questProgress: 25, rewards: { gold: 12, exp: 5, itemChance: 0.35 }, type: "prepare" },
+                    { name: "Starcie", description: "Walka z Żelaznym Minotaurem", duration: 110, questProgress: 20, rewards: { gold: 38, exp: 18, itemChance: 0.85 }, type: "boss" }
+                ]
+            },
+            { 
+                name: "Duch Piwnic", 
+                monster: "Dręczyciel Marzeń", 
+                difficulty: 6,
+                stages: [
+                    { name: "Eksploracja", description: "Przeczesywanie ciemnych piwnic", duration: 55, questProgress: 20, rewards: { gold: 12, exp: 5 }, type: "scout" },
+                    { name: "Egzorcyzm", description: "Wypędzanie pomniejszych duchów", duration: 85, questProgress: 35, rewards: { gold: 18, exp: 10, itemChance: 0.5 }, type: "hunt" },
+                    { name: "Medytacja", description: "Przygotowanie umysłu na walkę", duration: 70, questProgress: 25, rewards: { gold: 15, exp: 6, itemChance: 0.4 }, type: "prepare" },
+                    { name: "Konfrontacja", description: "Pojedynek z Dręczycielem Marzeń", duration: 115, questProgress: 20, rewards: { gold: 45, exp: 21, itemChance: 0.9 }, type: "boss" }
+                ]
+            },
+            
+            // Difficulty 7-10: Hard quests with 5 stages
+            { 
+                name: "Błędny Rycerz", 
+                monster: "Sir Zapomnialski", 
+                difficulty: 7,
+                stages: [
+                    { name: "Śledztwo", description: "Badanie historii rycerza", duration: 50, questProgress: 15, rewards: { gold: 12, exp: 5 }, type: "scout" },
+                    { name: "Podróż", description: "Tropienie błędnego rycerza", duration: 75, questProgress: 25, rewards: { gold: 18, exp: 8, itemChance: 0.4 }, type: "hunt" },
+                    { name: "Przygotowania", description: "Zdobywanie odpowiedniego ekwipunku", duration: 65, questProgress: 20, rewards: { gold: 15, exp: 6, itemChance: 0.5 }, type: "prepare" },
+                    { name: "Pojedynek", description: "Honorowa walka z Sir Zapomnialskiem", duration: 95, questProgress: 25, rewards: { gold: 28, exp: 12, itemChance: 0.7 }, type: "boss" },
+                    { name: "Ocalenie", description: "Przywracanie pamięci rycerzowi", duration: 40, questProgress: 15, rewards: { gold: 22, exp: 9, itemChance: 0.6 }, type: "rescue" }
+                ]
+            },
+            { 
+                name: "Poranna Mgła", 
+                monster: "Widmo Świtu", 
+                difficulty: 8,
+                stages: [
+                    { name: "Obserwacja", description: "Studiowanie wzorców mgły", duration: 55, questProgress: 15, rewards: { gold: 15, exp: 6 }, type: "scout" },
+                    { name: "Polowanie", description: "Ściganie mglistych manifestacji", duration: 80, questProgress: 25, rewards: { gold: 22, exp: 10, itemChance: 0.45 }, type: "hunt" },
+                    { name: "Rytualny krąg", description: "Przygotowanie magicznej pułapki", duration: 70, questProgress: 20, rewards: { gold: 18, exp: 8, itemChance: 0.55 }, type: "prepare" },
+                    { name: "Ucieleśnienie", description: "Zmuszanie Widma do materialnej formy", duration: 100, questProgress: 25, rewards: { gold: 35, exp: 15, itemChance: 0.75 }, type: "boss" },
+                    { name: "Rozproszenie", description: "Ostateczne unicestwienie widma", duration: 45, questProgress: 15, rewards: { gold: 25, exp: 11, itemChance: 0.65 }, type: "finish" }
+                ]
+            },
+            { 
+                name: "Rywalizacja Bogów", 
+                monster: "Wyzwanie Olimpu", 
+                difficulty: 9,
+                stages: [
+                    { name: "Wezwanie", description: "Przyzywanie uwagi bogów", duration: 60, questProgress: 15, rewards: { gold: 18, exp: 7 }, type: "scout" },
+                    { name: "Próby", description: "Przechodzenie boskich testów", duration: 85, questProgress: 25, rewards: { gold: 28, exp: 12, itemChance: 0.5 }, type: "trial" },
+                    { name: "Błogosławieństwa", description: "Otrzymywanie boskiej mocy", duration: 75, questProgress: 20, rewards: { gold: 22, exp: 9, itemChance: 0.6 }, type: "prepare" },
+                    { name: "Olimpijskie Wyzwanie", description: "Starcie z boską awatarą", duration: 105, questProgress: 25, rewards: { gold: 42, exp: 18, itemChance: 0.8 }, type: "boss" },
+                    { name: "Triumf", description: "Odbieranie boskich nagród", duration: 50, questProgress: 15, rewards: { gold: 30, exp: 14, itemChance: 0.7 }, type: "victory" }
+                ]
+            },
+            { 
+                name: "Smocza Zemsta", 
+                monster: "Starożytny Smok", 
+                difficulty: 10,
+                stages: [
+                    { name: "Legenda", description: "Badanie smoczych kronik", duration: 65, questProgress: 15, rewards: { gold: 20, exp: 8 }, type: "scout" },
+                    { name: "Jaskinia", description: "Eksploracja smoczego legowiska", duration: 90, questProgress: 25, rewards: { gold: 32, exp: 14, itemChance: 0.55 }, type: "explore" },
+                    { name: "Skarb", description: "Zabezpieczanie smoczego skarbu", duration: 80, questProgress: 20, rewards: { gold: 25, exp: 10, itemChance: 0.65 }, type: "gather" },
+                    { name: "Przebudzenie", description: "Epicki pojedynek ze Starożytnym Smokiem", duration: 120, questProgress: 25, rewards: { gold: 50, exp: 22, itemChance: 0.9 }, type: "boss" },
+                    { name: "Legendarna Nagroda", description: "Zdobywanie smoczego artefaktu", duration: 55, questProgress: 15, rewards: { gold: 35, exp: 16, itemChance: 0.8 }, type: "treasure" }
+                ]
+            },
+            
+            // Special thematic quests (difficulty 4-9)
+            { 
+                name: "Taniec Amazonek", 
+                monster: "Dzika Amazonka", 
+                difficulty: 5,
+                stages: [
+                    { name: "Obserwacja", description: "Studiowanie amazońskich rytualów", duration: 50, questProgress: 20, rewards: { gold: 10, exp: 4 }, type: "scout" },
+                    { name: "Wyzwanie", description: "Rzucanie wyzwania plemieniu", duration: 75, questProgress: 35, rewards: { gold: 15, exp: 8, itemChance: 0.45 }, type: "challenge" },
+                    { name: "Taniec Wojenny", description: "Uczestnictwo w rytuale bojowym", duration: 70, questProgress: 25, rewards: { gold: 12, exp: 5, itemChance: 0.4 }, type: "ritual" },
+                    { name: "Pojedynek", description: "Walka z Dziką Amazonką", duration: 110, questProgress: 20, rewards: { gold: 38, exp: 18, itemChance: 0.85 }, type: "boss" }
+                ]
+            },
+            { 
+                name: "Pojedynek Honoru", 
+                monster: "Rycerka Dziewica", 
+                difficulty: 4,
+                stages: [
+                    { name: "Wyzwanie", description: "Rzucanie honorowego wyzwania", duration: 45, questProgress: 20, rewards: { gold: 8, exp: 3 }, type: "challenge" },
+                    { name: "Przygotowania", description: "Duchowe oczyszczenie przed walką", duration: 70, questProgress: 35, rewards: { gold: 12, exp: 6, itemChance: 0.4 }, type: "prepare" },
+                    { name: "Ceremonia", description: "Rytualne pobłogosławienie broni", duration: 60, questProgress: 25, rewards: { gold: 10, exp: 4, itemChance: 0.35 }, type: "ritual" },
+                    { name: "Szlachetny Pojedynek", description: "Honorowa walka z Rycerką Dziewicą", duration: 105, questProgress: 20, rewards: { gold: 30, exp: 15, itemChance: 0.8 }, type: "boss" }
+                ]
+            },
+            { 
+                name: "Pokusa Demona", 
+                monster: "Succubus Kusicielka", 
+                difficulty: 6,
+                stages: [
+                    { name: "Pokusy", description: "Opieranie się demonicznym wizjom", duration: 55, questProgress: 20, rewards: { gold: 12, exp: 5 }, type: "resist" },
+                    { name: "Iluzje", description: "Przedzieranie się przez fałszywe rzeczywistości", duration: 80, questProgress: 35, rewards: { gold: 18, exp: 10, itemChance: 0.5 }, type: "illusion" },
+                    { name: "Oczyszczenie", description: "Wzmacnianie duchowej obrony", duration: 70, questProgress: 25, rewards: { gold: 15, exp: 6, itemChance: 0.4 }, type: "purify" },
+                    { name: "Konfrontacja", description: "Walka z Succubus Kusicielką", duration: 115, questProgress: 20, rewards: { gold: 45, exp: 21, itemChance: 0.9 }, type: "boss" }
+                ]
+            },
+            { 
+                name: "Władca Cieni", 
+                monster: "Demon Żądzy", 
+                difficulty: 7,
+                stages: [
+                    { name: "Mroczne Ścieżki", description: "Nawigowanie przez królestwo cieni", duration: 50, questProgress: 15, rewards: { gold: 12, exp: 5 }, type: "navigate" },
+                    { name: "Cienie Przeszłości", description: "Walka z własnymi wspomnieniami", duration: 75, questProgress: 25, rewards: { gold: 18, exp: 8, itemChance: 0.4 }, type: "memory" },
+                    { name: "Mroczne Pakt", description: "Negocjacje z mniejszymi demonami", duration: 65, questProgress: 20, rewards: { gold: 15, exp: 6, itemChance: 0.5 }, type: "negotiate" },
+                    { name: "Władca", description: "Starcie z Demonem Żądzy", duration: 95, questProgress: 25, rewards: { gold: 28, exp: 12, itemChance: 0.7 }, type: "boss" },
+                    { name: "Ucieczka", description: "Ucieczka z królestwa cieni", duration: 40, questProgress: 15, rewards: { gold: 22, exp: 9, itemChance: 0.6 }, type: "escape" }
+                ]
+            },
+            { 
+                name: "Posłaniec Niebios", 
+                monster: "Anioł Stróż", 
+                difficulty: 8,
+                stages: [
+                    { name: "Modlitwa", description: "Wzywanie niebiańskiej uwagi", duration: 55, questProgress: 15, rewards: { gold: 15, exp: 6 }, type: "pray" },
+                    { name: "Próby Cnoty", description: "Udowadnianie moralnej wartości", duration: 80, questProgress: 25, rewards: { gold: 22, exp: 10, itemChance: 0.45 }, type: "virtue" },
+                    { name: "Oczyszczenie", description: "Duchowe przygotowanie na spotkanie", duration: 70, questProgress: 20, rewards: { gold: 18, exp: 8, itemChance: 0.55 }, type: "purify" },
+                    { name: "Niebiańska Próba", description: "Test mocy przeciw Aniołowi Stróżowi", duration: 100, questProgress: 25, rewards: { gold: 35, exp: 15, itemChance: 0.75 }, type: "boss" },
+                    { name: "Błogosławieństwo", description: "Otrzymywanie anielskiej łaski", duration: 45, questProgress: 15, rewards: { gold: 25, exp: 11, itemChance: 0.65 }, type: "blessing" }
+                ]
+            },
+            { 
+                name: "Czarodziejka Klątew", 
+                monster: "Mroczna Wiedźma", 
+                difficulty: 9,
+                stages: [
+                    { name: "Badania", description: "Studiowanie zaklęć ochronnych", duration: 60, questProgress: 15, rewards: { gold: 18, exp: 7 }, type: "study" },
+                    { name: "Składniki", description: "Zdobywanie magicznych komponentów", duration: 85, questProgress: 25, rewards: { gold: 28, exp: 12, itemChance: 0.5 }, type: "gather" },
+                    { name: "Kontr-zaklęcia", description: "Przygotowanie magicznej obrony", duration: 75, questProgress: 20, rewards: { gold: 22, exp: 9, itemChance: 0.6 }, type: "enchant" },
+                    { name: "Magiczny Pojedynek", description: "Starcie czarów z Mroczną Wiedźmą", duration: 105, questProgress: 25, rewards: { gold: 42, exp: 18, itemChance: 0.8 }, type: "boss" },
+                    { name: "Rozplątanie", description: "Odwracanie rzuconych klątw", duration: 50, questProgress: 15, rewards: { gold: 30, exp: 14, itemChance: 0.7 }, type: "dispel" }
+                ]
+            },
+            { 
+                name: "Klątwa Wiedźmy", 
+                monster: "Stara Wiedźma", 
+                difficulty: 7,
+                stages: [
+                    { name: "Symptomy", description: "Rozpoznawanie działania klątwy", duration: 50, questProgress: 15, rewards: { gold: 12, exp: 5 }, type: "diagnose" },
+                    { name: "Źródło", description: "Tropienie pochodzenia klątwy", duration: 75, questProgress: 25, rewards: { gold: 18, exp: 8, itemChance: 0.4 }, type: "track" },
+                    { name: "Antidotum", description: "Przygotowanie magicznego leku", duration: 65, questProgress: 20, rewards: { gold: 15, exp: 6, itemChance: 0.5 }, type: "brew" },
+                    { name: "Konfrontacja", description: "Starcie ze Starą Wiedźmą", duration: 95, questProgress: 25, rewards: { gold: 28, exp: 12, itemChance: 0.7 }, type: "boss" },
+                    { name: "Zniesienie", description: "Całkowite usunięcie klątwy", duration: 40, questProgress: 15, rewards: { gold: 22, exp: 9, itemChance: 0.6 }, type: "lift" }
+                ]
+            },
+            { 
+                name: "Próba Bogini", 
+                monster: "Bogini Miłości", 
+                difficulty: 9,
+                stages: [
+                    { name: "Oddanie", description: "Udowadnianie prawdziwego oddania", duration: 60, questProgress: 15, rewards: { gold: 18, exp: 7 }, type: "devotion" },
+                    { name: "Uczucia", description: "Przechodzenie próby serc", duration: 85, questProgress: 25, rewards: { gold: 28, exp: 12, itemChance: 0.5 }, type: "emotion" },
+                    { name: "Ofiara", description: "Składanie wartościowej ofiary", duration: 75, questProgress: 20, rewards: { gold: 22, exp: 9, itemChance: 0.6 }, type: "sacrifice" },
+                    { name: "Boska Próba", description: "Ostateczny test przed Boginią Miłości", duration: 105, questProgress: 25, rewards: { gold: 42, exp: 18, itemChance: 0.8 }, type: "boss" },
+                    { name: "Miłosna Łaska", description: "Otrzymywanie boskiego błogosławieństwa", duration: 50, questProgress: 15, rewards: { gold: 30, exp: 14, itemChance: 0.7 }, type: "grace" }
+                ]
+            }
+        ];
+
+        // Available items for drops and rewards
+        this.items = [
+            { 
+                name: "Zardzewiały Miecz", 
+                type: "weapon", 
+                power: 5, 
+                rarity: "common",
+                statDescription: "+5 do Siły Ataku",
+                flavorText: "Ślady rdzy przypominają o niezliczonych walkach. Momo czuje ciężar historii w swojej dłoni."
+            },
+            { 
+                name: "Skórzana Zbroja", 
+                type: "armor", 
+                power: 3, 
+                rarity: "common",
+                statDescription: "+3 do Obrony Fizycznej",
+                flavorText: "Miękka skóra przylega do ciała Momo, dając poczucie bezpieczeństwa i seksowności."
+            },
+            { 
+                name: "Miedziana Bransoleta", 
+                type: "accessory", 
+                power: 2, 
+                rarity: "common",
+                statDescription: "+2 do Mocy Magicznej",
+                flavorText: "Prosty ornament, który rozgrzewa się pod wpływem emocji Momo."
+            },
+            { 
+                name: "Stalowy Miecz", 
+                type: "weapon", 
+                power: 12, 
+                rarity: "uncommon",
+                statDescription: "+12 do Siły Ataku",
+                flavorText: "Zimna stal kontrastuje z ciepłem ciała Momo. Każdy ruch jest precyzyjny i gracjowy."
+            },
+            { 
+                name: "Kolczuga", 
+                type: "armor", 
+                power: 8, 
+                rarity: "uncommon",
+                statDescription: "+8 do Obrony Fizycznej",
+                flavorText: "Metalowe ogniwa delikatnie masują skórę Momo podczas ruchu."
+            },
+            { 
+                name: "Srebrny Pierścień", 
+                type: "accessory", 
+                power: 6, 
+                rarity: "uncommon",
+                statDescription: "+6 do Mocy Magicznej",
+                flavorText: "Delikatny blask srebra odzwierciedla wewnętrzne światło Momo."
+            },
+            { 
+                name: "Miecz Mocy", 
+                type: "weapon", 
+                power: 25, 
+                rarity: "rare",
+                statDescription: "+25 do Siły Ataku",
+                flavorText: "Magiczna energia pulsuje w klindze, synchronizując się z biciem serca Momo."
+            },
+            { 
+                name: "Płytowa Zbroja", 
+                type: "armor", 
+                power: 18, 
+                rarity: "rare",
+                statDescription: "+18 do Obrony Fizycznej",
+                flavorText: "Lśniący metal odzwierciedla determinację w oczach Momo. Czuje się niepowstrzymana."
+            },
+            { 
+                name: "Złoty Amulet", 
+                type: "accessory", 
+                power: 15, 
+                rarity: "rare",
+                statDescription: "+15 do Obrony Magicznej",
+                flavorText: "Ciepłe złoto pulsuje w rytm serca Momo, chroniąc ją przed magicznymi wpływami."
+            },
+            { 
+                name: "Klinga Smoków", 
+                type: "weapon", 
+                power: 50, 
+                rarity: "legendary",
+                statDescription: "+50 do Siły Ataku, +10 do Magii Ognia",
+                flavorText: "Płomienie tańczą wokół ostrza, odzwierciedlając żar namiętności płonącej w sercu Momo."
+            },
+            { 
+                name: "Zbroja Tytanów", 
+                type: "armor", 
+                power: 35, 
+                rarity: "legendary",
+                statDescription: "+35 do Obrony, Odporność na Krytyczne Trafienia",
+                flavorText: "Pradawna moc chroni Momo przed wszelkim złem. Czuje się nieśmiertelna i niepowstrzymana."
+            },
+            { 
+                name: "Korona Bogów", 
+                type: "accessory", 
+                power: 30, 
+                rarity: "legendary",
+                statDescription: "+30 do Wszystkich Statystyk",
+                flavorText: "Moc absolutna kursuje przez żyły Momo. Świat wydaje się być w zasięgu jej dłoni."
+            },
+            { 
+                name: "Magiczny Buttplug", 
+                type: "artefakt", 
+                power: 10, 
+                rarity: "uncommon", 
+                effect: "hp_regen",
+                statDescription: "+10 do Magii, Regeneracja HP podczas walki",
+                flavorText: "Pulsujący artefakt emanuje ciepłem, które rozchodzi się po całym ciele Momo."
+            },
+            { 
+                name: "Perła Rozkoszy", 
+                type: "artefakt", 
+                power: 15, 
+                rarity: "rare", 
+                effect: "stamina_boost",
+                statDescription: "+15 do Magii, Zwiększona Wytrzymałość",
+                flavorText: "Opalizujące światło perły sprawia, że Momo czuje nieznane wcześniej pokłady energii."
+            },
+            { 
+                name: "Kryształowa Różdżka", 
+                type: "artefakt", 
+                power: 20, 
+                rarity: "rare", 
+                effect: "mana_shield",
+                statDescription: "+20 do Magii, Magiczna Tarcza",
+                flavorText: "Kryształ wibruje w harmonii z magiczną aurą Momo, tworząc ochronną barierę."
+            },
+            { 
+                name: "Amulet Wiecznej Młodości", 
+                type: "artefakt", 
+                power: 25, 
+                rarity: "legendary", 
+                effect: "hp_boost",
+                statDescription: "+25 do Magii, +50% Maksymalnego HP",
+                flavorText: "Strumień życiodajnej energii przepływa przez Momo, odnawiając jej młodość i witalność."
+            },
+            { 
+                name: "Pierścień Dominacji", 
+                type: "artefakt", 
+                power: 12, 
+                rarity: "rare", 
+                effect: "fear_aura",
+                statDescription: "+12 do Magii, Aura Strachu",
+                flavorText: "Mroczna moc pierścienia przesycana jest energią kontroli. Momo czuje władztwo nad innymi."
+            },
+            { 
+                name: "Klątwa Succubusa", 
+                type: "artefakt", 
+                power: 30, 
+                rarity: "legendary", 
+                effect: "life_drain",
+                statDescription: "+30 do Magii, Wysysa Życie Przeciwników",
+                flavorText: "Mroczna esencja succubusa splata się z duszą Momo, dając jej moc karmiącą się życiem innych."
+            },
+            { 
+                name: "Buttplug Sukkubicy", 
+                type: "accessory", 
+                power: 18, 
+                rarity: "rare",
+                statDescription: "+10 do Obrony Magicznej, +5 do Wrażliwości",
+                flavorText: "Sukkubicy w zasadzie podobało się, gdy Momo 'pozyskiwała' z niej ten przedmiot."
+            },
+            { 
+                name: "Wibrujący Sztylet", 
+                type: "weapon", 
+                power: 14, 
+                rarity: "uncommon",
+                statDescription: "+14 do Ataku, +3 do Wrażliwości",
+                flavorText: "Delikatne wibracje przechodzą przez rękę Momo, przypominając o innych zastosowaniach..."
+            },
+            { 
+                name: "Koronka Nimfomanki", 
+                type: "armor", 
+                power: 12, 
+                rarity: "rare",
+                statDescription: "+8 do Obrony, +8 do Atrakcyjności",
+                flavorText: "Przezroczysta koronka ledwo ukrywa to, co najważniejsze. Momo czuje się pewniej w swojej kobiecości."
+            }
+        ];
+    }
+
+    // === UI Functions ===
+    
+    setupStaticContent() {
+        const arena = gameData.minigames.arena;
+        const statsContainer = document.getElementById('arena-stats-content');
+        
+        if (!statsContainer) return;
+        
+        // Create static structure with tooltip-enabled elements (set once)
+        statsContainer.innerHTML = `
+            <div class="space-y-2">
+                <div><strong><span class="arena-stat-tooltip" data-stat="level">Poziom</span>:</strong> <span id="arena-level-value">${arena.level}</span></div>
+                <div class="mt-2">
+                    <strong><span class="arena-stat-tooltip" data-stat="experience">Doświadczenie</span>:</strong>
+                    <div class="w-full bg-gray-300 rounded-full h-2.5 mt-1">
+                        <div id="arena-exp-bar" class="h-2.5 rounded-full transition-all duration-300" 
+                             style="width: 0%; background-color: #3b82f6"></div>
+                    </div>
+                    <div id="arena-exp-text" class="text-xs mt-1">0/100 EXP</div>
+                </div>
+                <div><strong><span class="arena-stat-tooltip" data-stat="status">Status</span>:</strong> <span id="arena-status-value">⚔️ Gotowa</span></div>
+                <div><strong><span class="arena-stat-tooltip" data-stat="combat_power">Moc Bojowa</span>:</strong> <span id="arena-power-value">0</span></div>
+                <div><strong><span class="arena-stat-tooltip" data-stat="gold">Złoto</span>:</strong> <span id="arena-gold-value">0</span></div>
+                <div class="mt-4">
+                    <strong><span class="arena-stat-tooltip" data-stat="hp">Kondycja</span>:</strong>
+                    <div class="w-full bg-gray-300 rounded-full h-2.5 mt-1">
+                        <div id="arena-hp-bar" class="h-2.5 rounded-full transition-all duration-300" 
+                             style="width: 100%; background-color: #22c55e"></div>
+                    </div>
+                    <div id="arena-hp-text" class="text-xs mt-1">100/100 HP</div>
+                </div>
+                <div class="mt-4">
+                    <strong><span class="arena-stat-tooltip" data-stat="statystyki_bojowe">Statystyki Bojowe</span>:</strong>
+                    <div id="arena-skill-bars" class="text-sm space-y-2">
+                        <!-- Skill bars will be updated here -->
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <strong><span class="arena-stat-tooltip" data-stat="atuty_fizyczne">Atuty Fizyczne</span>:</strong>
+                    <div class="text-sm">
+                        <div><span class="arena-stat-tooltip" data-stat="cyce">Cyce</span>: <span id="arena-cyce-value">10/10 ⭐</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="dupa">Dupa</span>: <span id="arena-dupa-value">10/10 ⭐</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="cipka">Cipka</span>: <span id="arena-cipka-value">Dziewicza</span></div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <strong><span class="arena-stat-tooltip" data-stat="detale_cipki">Detale Cipki</span>:</strong>
+                    <div class="text-sm">
+                        <div><span class="arena-stat-tooltip" data-stat="cipka_sensitivity">Wrażliwość</span>: <span id="arena-sensitivity-value">50%</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="cipka_wetness">Wilgotność</span>: <span id="arena-wetness-value">10%</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="cipka_corruption">Korupcja</span>: <span id="arena-corruption-value">0%</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="cipka_magic_resistance">Odporność Mag.</span>: <span id="arena-resistance-value">100%</span></div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <strong><span class="arena-stat-tooltip" data-stat="rekord">Rekord</span>:</strong>
+                    <div class="text-sm">
+                        <div><span class="arena-stat-tooltip" data-stat="quests_completed">Questy</span>: <span id="arena-quests-value">0</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="total_deaths">Śmierci</span>: <span id="arena-deaths-value">0</span></div>
+                        <div><span class="arena-stat-tooltip" data-stat="items_found">Przedmioty</span>: <span id="arena-items-value">0</span></div>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <strong><span class="arena-stat-tooltip" data-stat="ekwipunek">Ekwipunek</span>:</strong>
+                    <div class="text-sm">
+                        <div><span class="arena-equipment-tooltip" data-equipment="weapon">Broń</span>: <span id="arena-weapon-value">Brak</span></div>
+                        <div><span class="arena-equipment-tooltip" data-equipment="armor">Zbroja</span>: <span id="arena-armor-value">Brak</span></div>
+                        <div><span class="arena-equipment-tooltip" data-equipment="accessory">Dodatek</span>: <span id="arena-accessory-value">Brak</span></div>
+                        <div><span class="arena-equipment-tooltip" data-equipment="artefakt">Artefakt</span>: <span id="arena-artefakt-value">Brak</span></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Setup tooltips after creating static structure
+        if (!this.tooltipsSetupComplete) {
+            this.setupTooltips();
+        }
+        
+        // Mark initial setup as complete
+        this.isInitialSetup = false;
+    }
+    
+    updateDynamicContent() {
+        const arena = gameData.minigames.arena;
+        
+        // Update all dynamic values without destroying DOM structure
+        this.updateStatValues();
+        this.updateProgressBars();
+        this.updateCurrentActivity();
+        this.updateLogEntries();
+    }
+    
+    updateStatValues() {
+        const arena = gameData.minigames.arena;
+        const totalPower = this.calculateTotalPower();
+        const statusText = arena.isResting ? "💤 Odpoczynek" : (arena.hp <= 0 ? "😵 Wyczerpana" : "⚔️ Gotowa");
+        
+        // Update basic stats
+        const levelValue = document.getElementById('arena-level-value');
+        const statusValue = document.getElementById('arena-status-value');
+        const powerValue = document.getElementById('arena-power-value');
+        const goldValue = document.getElementById('arena-gold-value');
+        
+        if (levelValue) levelValue.textContent = arena.level;
+        if (statusValue) statusValue.textContent = statusText;
+        if (powerValue) powerValue.textContent = totalPower;
+        if (goldValue) goldValue.textContent = this.formatNumber(gameData.goldCoins);
+        
+        // Update experience bar and text
+        const expBar = document.getElementById('arena-exp-bar');
+        const expText = document.getElementById('arena-exp-text');
+        if (expBar) expBar.style.width = `${(arena.experience / arena.experienceToNext) * 100}%`;
+        if (expText) expText.textContent = `${arena.experience}/${arena.experienceToNext} EXP`;
+        
+        // Update HP bar and text
+        const hpPercentage = (arena.hp / arena.maxHp) * 100;
+        const hpBar = document.getElementById('arena-hp-bar');
+        const hpText = document.getElementById('arena-hp-text');
+        if (hpBar) {
+            hpBar.style.width = `${hpPercentage}%`;
+            hpBar.style.backgroundColor = hpPercentage > 50 ? '#22c55e' : hpPercentage > 20 ? '#f59e0b' : '#dc2626';
+        }
+        if (hpText) hpText.textContent = `${Math.floor(arena.hp)}/${arena.maxHp} HP`;
+        
+        // Update physical attributes
+        const cyceValue = document.getElementById('arena-cyce-value');
+        const dupaValue = document.getElementById('arena-dupa-value');
+        const cipkaValue = document.getElementById('arena-cipka-value');
+        
+        if (cyceValue) cyceValue.textContent = `${arena.stats.cyce}/10 ⭐`;
+        if (dupaValue) dupaValue.textContent = `${arena.stats.dupa}/10 ⭐`;
+        if (cipkaValue) cipkaValue.textContent = arena.stats.cipka;
+        
+        // Update cipka effects
+        const sensitivityValue = document.getElementById('arena-sensitivity-value');
+        const wetnessValue = document.getElementById('arena-wetness-value');
+        const corruptionValue = document.getElementById('arena-corruption-value');
+        const resistanceValue = document.getElementById('arena-resistance-value');
+        
+        if (sensitivityValue) sensitivityValue.textContent = `${(arena.cipkaEffects.sensitivity * 100).toFixed(0)}%`;
+        if (wetnessValue) wetnessValue.textContent = `${(arena.cipkaEffects.wetness * 100).toFixed(0)}%`;
+        if (corruptionValue) corruptionValue.textContent = `${(arena.cipkaEffects.corruption * 100).toFixed(0)}%`;
+        if (resistanceValue) resistanceValue.textContent = `${(arena.cipkaEffects.magic_resistance * 100).toFixed(0)}%`;
+        
+        // Update record stats
+        const questsValue = document.getElementById('arena-quests-value');
+        const deathsValue = document.getElementById('arena-deaths-value');
+        const itemsValue = document.getElementById('arena-items-value');
+        
+        if (questsValue) questsValue.textContent = arena.questsCompleted;
+        if (deathsValue) deathsValue.textContent = arena.totalDeaths;
+        if (itemsValue) itemsValue.textContent = arena.itemsFound;
+        
+        // Update equipment
+        this.updateEquipmentDisplay();
+        
+        // Update skill bars
+        this.updateSkillBars();
+    }
+    
+    updateEquipmentDisplay() {
+        const arena = gameData.minigames.arena;
+        
+        const weaponValue = document.getElementById('arena-weapon-value');
+        const armorValue = document.getElementById('arena-armor-value');
+        const accessoryValue = document.getElementById('arena-accessory-value');
+        const artefaktValue = document.getElementById('arena-artefakt-value');
+        
+        if (weaponValue) {
+            weaponValue.innerHTML = arena.equipment.weapon ? 
+                `<span class="arena-equipment-tooltip" data-item='${JSON.stringify(arena.equipment.weapon)}'>${arena.equipment.weapon.name}</span>` : 
+                'Brak';
+        }
+        if (armorValue) {
+            armorValue.innerHTML = arena.equipment.armor ? 
+                `<span class="arena-equipment-tooltip" data-item='${JSON.stringify(arena.equipment.armor)}'>${arena.equipment.armor.name}</span>` : 
+                'Brak';
+        }
+        if (accessoryValue) {
+            accessoryValue.innerHTML = arena.equipment.accessory ? 
+                `<span class="arena-equipment-tooltip" data-item='${JSON.stringify(arena.equipment.accessory)}'>${arena.equipment.accessory.name}</span>` : 
+                'Brak';
+        }
+        if (artefaktValue) {
+            artefaktValue.innerHTML = arena.equipment.artefakt ? 
+                `<span class="arena-equipment-tooltip" data-item='${JSON.stringify(arena.equipment.artefakt)}'>${arena.equipment.artefakt.name}</span>` : 
+                'Brak';
+        }
+        
+        // Re-setup tooltips for new equipment elements if needed
+        if (weaponValue || armorValue || accessoryValue || artefaktValue) {
+            const newEquipmentElements = document.querySelectorAll('.arena-equipment-tooltip');
+            newEquipmentElements.forEach(element => {
+                if (!element.onmouseenter) {
+                    const arenaSystem = this;
+                    element.onmouseenter = function(e) { 
+                        arenaSystem.simpleShowTooltip(e, 'equipment'); 
+                    };
+                    element.onmouseleave = function() { 
+                        arenaSystem.simpleDelayedHideTooltip(); 
+                    };
+                    element.style.cursor = 'help';
+                    element.style.textDecoration = 'underline dotted';
+                    element.style.color = '#a855f7';
+                }
+            });
+        }
+    }
+    
+    updateSkillBars() {
+        const arena = gameData.minigames.arena;
+        const skillBarsContainer = document.getElementById('arena-skill-bars');
+        
+        if (skillBarsContainer) {
+            // Clean up existing tooltip events before innerHTML
+            const existingElements = skillBarsContainer.querySelectorAll('.arena-stat-tooltip');
+            existingElements.forEach(element => {
+                if (element.hasTooltipEvents) {
+                    element.hasTooltipEvents = false;
+                }
+            });
+            
+            skillBarsContainer.innerHTML = `
+                ${this.createCompactSkillBar('sila', 'Siła', arena.stats.sila, arena.skillProgress.sila, arena.skillCaps.sila, '#dc2626')}
+                ${this.createCompactSkillBar('zrecznosc', 'Zręczność', arena.stats.zrecznosc, arena.skillProgress.zrecznosc, arena.skillCaps.zrecznosc, '#16a34a')}
+                ${this.createCompactSkillBar('inteligencja', 'Inteligencja', arena.stats.inteligencja, arena.skillProgress.inteligencja, arena.skillCaps.inteligencja, '#2563eb')}
+                ${this.createCompactSkillBar('szczescie', 'Szczęście', arena.stats.szczescie, arena.skillProgress.szczescie, arena.skillCaps.szczescie, '#ca8a04')}
+            `;
+            
+            
+            // Re-setup tooltips for skill bar elements after innerHTML destroys them
+            const newSkillElements = skillBarsContainer.querySelectorAll('.arena-stat-tooltip');
+            newSkillElements.forEach(element => {
+                if (!element.onmouseenter) {
+                    const arenaSystem = this;
+                    element.onmouseenter = function(e) { 
+                        arenaSystem.simpleShowTooltip(e, 'stat'); 
+                    };
+                    element.onmouseleave = function() { 
+                        arenaSystem.simpleDelayedHideTooltip(); 
+                    };
+                    element.style.cursor = 'help';
+                    element.style.textDecoration = 'underline dotted';
+                    element.style.color = '#a855f7';
+                    
+                    // Add fallback title attribute
+                    const statName = element.getAttribute('data-stat');
+                    if (statName && this.statDescriptions[statName]) {
+                        element.title = this.statDescriptions[statName].title;
+                    }
+                }
+            });
+        }
+    }
+    
+    updateProgressBars() {
+        const arena = gameData.minigames.arena;
+        const progressContainer = document.getElementById('arena-progress-content');
+        
+        if (!progressContainer) return;
+        
+        // Clear previous progress bars
+        progressContainer.innerHTML = '';
+        
+        // Quest progress (if active) - Handle both quest formats
+        if (arena.currentQuest) {
+            const quest = arena.currentQuest;
+            
+            if (quest.objectives && Array.isArray(quest.objectives) && quest.objectives.length > 0) {
+                // New objective-based quest format
+                const currentObjective = quest.objectives[arena.currentObjectiveIndex || 0];
+                if (currentObjective) {
+                    const progress = currentObjective.progress || 0;
+                    const maxProgress = currentObjective.maxProgress || 100;
+                    const progressPercentage = (progress / maxProgress) * 100;
+                    const progressText = `${progress}/${maxProgress}`;
+                    
+                    progressContainer.innerHTML += this.createProgressBar(
+                        "🏆 GŁÓWNY QUEST", 
+                        `${quest.name} - ${quest.monster}`, 
+                        progressPercentage, 100, "#8b5cf6", 
+                        `Postęp questu: ${quest.name} przeciwko ${quest.monster}`, true
+                    );
+                    
+                    progressContainer.innerHTML += this.createProgressBar(
+                        "🎯 AKTUALNY CEL", 
+                        `${currentObjective.name} (${progressText})`, 
+                        progressPercentage, 100, "#f97316", 
+                        currentObjective.description || "Aktualny cel do wykonania", true
+                    );
+                    
+                    // Boss phases for objective-based quests
+                    if (quest.currentPhase && quest.maxPhases && quest.phaseProgress !== undefined) {
+                        const currentPhase = `Faza ${quest.currentPhase}/${quest.maxPhases}`;
+                        const phaseProgress = quest.phaseProgress;
+                        progressContainer.innerHTML += this.createProgressBar("⚡ FAZA BOSSA", currentPhase, phaseProgress, 100, "#b91c1c", `Aktualna faza walki z bossem - ${Math.floor(phaseProgress)}% postępu fazy`);
+                    }
+                }
+            } else {
+                // Legacy quest format
+                const progress = quest.progress || 0;
+                const maxProgress = quest.maxProgress || 100;
+                const progressPercentage = (progress / maxProgress) * 100;
+                
+                progressContainer.innerHTML += this.createProgressBar(
+                    "⚔️ WALKA Z POTWOREM", 
+                    `${quest.monster} (${quest.name})`, 
+                    progressPercentage, 100, "#dc2626", 
+                    `Postęp walki: ${progress}/${maxProgress}`, true
+                );
+            }
+            
+            // Combat phases for legacy format
+            if (quest.currentPhase && quest.maxPhases && quest.phaseProgress !== undefined) {
+                const currentPhase = `Faza ${quest.currentPhase}/${quest.maxPhases}`;
+                const phaseProgress = quest.phaseProgress;
+                progressContainer.innerHTML += this.createProgressBar("⚡ FAZA WALKI", currentPhase, phaseProgress, 100, "#b91c1c", `Aktualna faza combat - ${Math.floor(phaseProgress)}% postępu fazy`, true);
+            }
+        } else if (arena.isResting) {
+            // Rest progress
+            const restPercentage = ((arena.restDuration - arena.restTimeRemaining) / arena.restDuration) * 100;
+            progressContainer.innerHTML += this.createProgressBar("💤 ODPOCZYNEK", arena.currentActivity, restPercentage, 100, "#10b981", "Regeneracja sił", true);
+        }
+        
+        // Stamina (always shown)
+        const staminaPercentage = (arena.stamina.current / arena.stamina.max) * 100;
+        progressContainer.innerHTML += this.createProgressBar("Stamina", `${Math.floor(arena.stamina.current)}/${arena.stamina.max}`, staminaPercentage, 100, "#10b981", "Energia bojowa - regeneruje się szybciej niż HP");
+        
+        // Active skill training (if active)
+        if (arena.skillTraining && arena.skillTraining.active && arena.skillTraining.timeRemaining > 0) {
+            const skillNames = { sila: 'Siła', zrecznosc: 'Zręczność', inteligencja: 'Inteligencja', szczescie: 'Szczęście' };
+            const trainingPercentage = ((arena.skillTraining.duration - arena.skillTraining.timeRemaining) / arena.skillTraining.duration) * 100;
+            progressContainer.innerHTML += this.createProgressBar("Trening", skillNames[arena.skillTraining.active], trainingPercentage, 100, "#f97316", "Aktywny trening umiejętności podczas walki");
+        }
+        
+        // Milestone progress (every 10 quests = bonus gold)
+        const milestoneProgress = (arena.questsCompleted % 10) * 10;
+        progressContainer.innerHTML += this.createProgressBar("Do nagrody", `${arena.questsCompleted % 10}/10`, milestoneProgress, 100, "#8b5cf6", "Co 10 ukończonych questów otrzymujesz bonus złota");
+        
+        // Cipka effects (animated during combat)
+        const cipkaEffects = arena.cipkaEffects;
+        progressContainer.innerHTML += this.createProgressBar("Wrażliwość", `${(cipkaEffects.sensitivity * 100).toFixed(0)}%`, cipkaEffects.sensitivity * 100, 100, "#ec4899", "Poziom wrażliwości - zmienia się podczas walki");
+        progressContainer.innerHTML += this.createProgressBar("Wilgotność", `${(cipkaEffects.wetness * 100).toFixed(0)}%`, cipkaEffects.wetness * 100, 100, "#06b6d4", "Poziom podniecenia - wzrasta podczas intensywnych walk");
+        
+        // Equipment condition (when equipment exists)
+        const equipmentConditions = [];
+        Object.entries(arena.equipment).forEach(([slot, item]) => {
+            if (item && item.condition !== undefined) {
+                equipmentConditions.push(item.condition);
+            }
+        });
+        
+        if (equipmentConditions.length > 0) {
+            const avgCondition = equipmentConditions.reduce((sum, condition) => sum + condition, 0) / equipmentConditions.length;
+            if (avgCondition < 100) {
+                progressContainer.innerHTML += this.createProgressBar("Stan Ekwip.", `${Math.floor(avgCondition)}%`, avgCondition, 100, "#6b7280", "Stan ekwipunku - maleje podczas walki, regeneruje podczas odpoczynku");
+                
+                // Add Stopień Roznegliżowania - inverse of equipment condition
+                const rozneglizowaie = 100 - avgCondition;
+                progressContainer.innerHTML += this.createProgressBar("Stopień Roznegliżowania", `${Math.floor(rozneglizowaie)}%`, rozneglizowaie, 100, "#dc2626", "Im bardziej uszkodzony ekwipunek, tym bardziej Momo jest roznegliżowana");
+            }
+        }
+    }
+    
+    updateCurrentActivity() {
+        const currentActivityContainer = document.getElementById('arena-current-activity');
+        if (!currentActivityContainer) return;
+        
+        const arena = gameData.minigames.arena;
+        const currentActivity = arena.currentQuest ? 
+            `⚔️ ${arena.currentQuest.name}` : 
+            (arena.isResting ? `💤 ${arena.currentActivity}` : "🔍 Szukanie przeciwników");
+            
+        currentActivityContainer.innerHTML = `
+            <div class="p-3 bg-white/5 rounded-lg border-l-4 border-yellow-500">
+                <div class="text-lg font-bold text-yellow-300 mb-2">Status:</div>
+                <div class="text-white">${currentActivity}</div>
+            </div>
+        `;
+    }
+    
+    updateLogEntries() {
+        const logContainer = document.getElementById('arena-log-content');
+        if (!logContainer) return;
+        
+        const arena = gameData.minigames.arena;
+        
+        // Clear and rebuild log
+        logContainer.innerHTML = '';
+        const entries = arena.logEntries.slice(-50).reverse(); // Show last 50 entries, newest first
+        entries.forEach(entry => {
+            const div = document.createElement('div');
+            div.className = 'log-entry p-2 mb-2 bg-white/5 rounded border-l-4 border-purple-500 text-sm';
+            div.innerHTML = entry;
+            logContainer.appendChild(div);
+        });
+        
+        // Auto-scroll to show newest entries (scroll to top since we reverse the list)
+        logContainer.scrollTop = 0;
+    }
+    
+    displayArena() {
+        // Set the viewed character ID to enable live updates
+        gameData.viewedCharacterId = 'arena';
+        
+        // Mark arena as visited for the first time to enable progression
+        const arena = gameData.minigames.arena;
+        
+        // Ensure arena data exists
+        if (!arena) {
+            console.error('Arena data not found in gameData.minigames - cannot display arena');
+            return;
+        }
+        
+        if (!arena.hasBeenVisited) {
+            arena.hasBeenVisited = true;
+            console.log('Arena activated for the first time!');
+        }
+        
+        const container = document.getElementById('main-character-display');
+        if (!container) {
+            console.error('main-character-display element not found - cannot display arena');
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="w-full h-full flex flex-col space-y-4 relative">
+                <button onclick="if(window.displayManor){window.displayManor()}else{console.error('displayManor function not available')}" class="btn-primary absolute top-2 right-2 text-sm px-3 py-1 z-10">Wróć</button>
+                <h2 class="text-2xl font-bold text-center">Arena Momo</h2>
+                
+                <!-- Visual Tooltip Status Indicator -->
+                <div class="text-center">
+                    <div id="tooltip-status" class="inline-block px-4 py-2 rounded-lg text-sm font-bold" style="background-color: #dc2626; color: white;">
+                        🔧 Tooltips: Ładowanie...
+                    </div>
+                    <button id="fix-tooltips-btn" onclick="window.ArenaSystem?.fixTooltips?.()" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                        🔄 Napraw Tooltips
+                    </button>
+                </div>
+                
+                <div class="flex flex-1 gap-4">
+                    <div class="w-1/3 space-y-4">
+                        <div class="bg-white/10 rounded-lg p-4">
+                            <h3 class="font-bold mb-2">Statystyki</h3>
+                            <div id="arena-stats-content" class="text-sm"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="w-1/3 space-y-4">
+                        <div class="bg-white/10 rounded-lg p-4">
+                            <h3 class="font-bold mb-2">Postęp</h3>
+                            <div id="arena-progress-content" class="text-sm"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="w-1/3 space-y-4">
+                        <div class="bg-white/10 rounded-lg p-4">
+                            <h3 class="font-bold mb-2">Obecna Aktywność</h3>
+                            <div id="arena-current-activity" class="text-sm mb-4"></div>
+                        </div>
+                        
+                        <div class="bg-white/10 rounded-lg p-4">
+                            <h3 class="font-bold mb-2">Log Aktywności</h3>
+                            <div id="arena-log-content" class="text-xs max-h-64 overflow-y-auto space-y-1"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Reset render flags when displaying arena fresh
+        this.tooltipsSetupComplete = false;
+        this.setupInProgress = false;
+        this.isInitialSetup = true;
+        this.staticContentSetup = false;
+        
+        this.render();
+    }
+
+    render() {
+        const arena = gameData.minigames.arena;
+        
+        // Ensure arena data is properly initialized
+        if (!arena) {
+            console.error('Arena data not found in gameData.minigames');
+            return;
+        }
+        
+        const statsContainer = document.getElementById('arena-stats-content');
+        const progressContainer = document.getElementById('arena-progress-content');
+        const logContainer = document.getElementById('arena-log-content');
+        
+        if (!statsContainer || !progressContainer || !logContainer) return;
+        
+        // Handle initial setup vs updates
+        if (this.isInitialSetup && !this.staticContentSetup) {
+            this.setupStaticContent();
+            this.staticContentSetup = true;
+        }
+        
+        // Initialize missing properties with defaults if needed
+        if (typeof arena.hp === 'undefined') arena.hp = arena.maxHp || 100;
+        if (typeof arena.maxHp === 'undefined') arena.maxHp = 100;
+        if (typeof arena.level === 'undefined') arena.level = 1;
+        if (typeof arena.experience === 'undefined') arena.experience = 0;
+        if (typeof arena.experienceToNext === 'undefined') arena.experienceToNext = 100;
+        if (typeof arena.isResting === 'undefined') arena.isResting = false;
+        if (!arena.stats) arena.stats = { sila: 10, zrecznosc: 6, inteligencja: 5, szczescie: 7, cyce: 10, dupa: 10, cipka: "Dziewicza" };
+        if (!arena.cipkaEffects) arena.cipkaEffects = { sensitivity: 0.5, wetness: 0.1, corruption: 0.0, magic_resistance: 1.0, recovery_time: 1.0 };
+        if (!arena.equipment) arena.equipment = { weapon: null, armor: null, accessory: null, artefakt: null };
+        if (!arena.skillProgress) arena.skillProgress = { sila: 0, zrecznosc: 0, inteligencja: 0, szczescie: 0, cyce: 0, dupa: 0 };
+        if (!arena.skillCaps) arena.skillCaps = { sila: 100, zrecznosc: 100, inteligencja: 100, szczescie: 100, cyce: 10, dupa: 10 };
+        if (typeof arena.questsCompleted === 'undefined') arena.questsCompleted = 0;
+        if (typeof arena.totalDeaths === 'undefined') arena.totalDeaths = 0;
+        if (typeof arena.itemsFound === 'undefined') arena.itemsFound = 0;
+        if (!arena.logEntries) arena.logEntries = [];
+        
+        // Always update dynamic content
+        this.updateDynamicContent();
+    }
+
+    // Helper function for number formatting
+    formatNumber(num) {
+        if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+        if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+        return num.toString();
+    }
+
+    // Helper function for creating compact skill bars
+    createCompactSkillBar(statName, label, currentValue, progress, cap, color) {
+        // Calculate progress within current level: current progress mod 10 (since every 10 progress = +1 stat)
+        const progressInCurrentLevel = Math.floor(progress) % 10;
+        const progressPercentage = (progressInCurrentLevel / 10) * 100;
+        const tooltip = this.statDescriptions[statName] ? this.statDescriptions[statName].description : "";
+        
+        return `
+            <div class="flex items-center justify-between">
+                <span class="w-20 flex-shrink-0"><strong><span class="arena-stat-tooltip" data-stat="${statName}">${label}</span></strong></span>
+                <div class="flex items-center space-x-2">
+                    <div class="w-20 bg-gray-300 rounded-full h-2">
+                        <div class="h-2 rounded-full transition-all duration-300" 
+                             style="width: ${progressPercentage}%; background-color: ${color}"></div>
+                    </div>
+                    <span class="text-sm font-bold w-6 text-right">${currentValue}</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // Helper function for creating progress bars
+    createProgressBar(label, text, percentage, maxPercentage, color, tooltip = null, isProminent = false) {
+        const clampedPercentage = Math.min(percentage, maxPercentage);
+        const tooltipClass = tooltip ? 'arena-progress-tooltip' : '';
+        const tooltipAttr = tooltip ? `data-tooltip="${tooltip}"` : '';
+        
+        if (isProminent) {
+            // Prominent progress bar for quest/rest progress
+            return `
+                <div class="mb-4 p-2 bg-white/10 rounded-lg">
+                    <div class="flex justify-between text-sm mb-2">
+                        <span><strong><span class="${tooltipClass}" ${tooltipAttr}>${label}</span></strong></span>
+                        <span class="font-bold">${Math.floor(clampedPercentage)}%</span>
+                    </div>
+                    <div class="text-xs mb-2 text-gray-300">${text}</div>
+                    <div class="w-full bg-gray-600 rounded-full h-4">
+                        <div class="h-4 rounded-full transition-all duration-500" 
+                             style="width: ${clampedPercentage}%; background-color: ${color}"></div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="mb-2">
+                <div class="flex justify-between text-xs mb-1">
+                    <span><strong><span class="${tooltipClass}" ${tooltipAttr}>${label}</span>:</strong></span>
+                    <span>${text}</span>
+                </div>
+                <div class="w-full bg-gray-300 rounded-full h-2">
+                    <div class="h-2 rounded-full transition-all duration-300" 
+                         style="width: ${clampedPercentage}%; background-color: ${color}"></div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Add log entry
+    addLog(message) {
+        const arena = gameData.minigames.arena;
+        arena.logEntries.push(message);
+        
+        // Keep only last 100 entries
+        if (arena.logEntries.length > 100) {
+            arena.logEntries = arena.logEntries.slice(-100);
+        }
+    }
+
+    // === Tooltip System ===
+    
+    
+    setupTooltips() {
+        // Prevent multiple simultaneous setups
+        if (this.setupInProgress || this.tooltipsSetupComplete) {
+            return;
+        }
+        
+        this.setupInProgress = true;
+        this.updateTooltipStatus('loading', 'Ustawianie...');
+        
+        try {
+            // Check if DOM is ready and arena container exists
+            const arenaContainer = document.querySelector('#main-character-display');
+            if (!arenaContainer) {
+                this.updateTooltipStatus('error', 'Arena niedostępna');
+                this.setupInProgress = false;
+                // Retry after short delay
+                setTimeout(() => this.setupTooltips(), 1000);
+                return;
+            }
+            
+            // Find all tooltip elements with more specific selectors
+            const statElements = arenaContainer.querySelectorAll('.arena-stat-tooltip');
+            const equipmentElements = arenaContainer.querySelectorAll('.arena-equipment-tooltip');
+            const progressElements = arenaContainer.querySelectorAll('.arena-progress-tooltip');
+            
+            const totalElements = statElements.length + equipmentElements.length + progressElements.length;
+            
+            if (totalElements === 0) {
+                this.updateTooltipStatus('error', 'Brak elementów');
+                this.setupInProgress = false;
+                // Retry after delay in case elements are still loading
+                setTimeout(() => {
+                    if (!this.tooltipsSetupComplete) {
+                        this.setupTooltips();
+                    }
+                }, 2000);
+                return;
+            }
+            
+            let successCount = 0;
+            
+            // Setup stat tooltips with better error handling
+            statElements.forEach((element, index) => {
+                try {
+                    if (!element || !element.getAttribute) {
+                        console.warn(`Stat element ${index} is invalid:`, element);
+                        return;
+                    }
+                    
+                    // Store reference to this for event handlers
+                    const arenaSystem = this;
+                    element.onmouseenter = function(e) { 
+                        arenaSystem.simpleShowTooltip(e, 'stat'); 
+                    };
+                    element.onmouseleave = function() { 
+                        arenaSystem.simpleDelayedHideTooltip(); 
+                    };
+                    element.style.cursor = 'help';
+                    element.style.textDecoration = 'underline dotted';
+                    element.style.color = '#a855f7';
+                    
+                    // Add fallback title attribute
+                    const statName = element.getAttribute('data-stat');
+                    if (statName && this.statDescriptions[statName]) {
+                        element.title = this.statDescriptions[statName].title;
+                    }
+                    
+                    successCount++;
+                } catch (err) {
+                    console.warn(`Error setting up stat tooltip ${index}:`, err);
+                }
+            });
+            
+            // Setup equipment tooltips with better error handling
+            equipmentElements.forEach((element, index) => {
+                try {
+                    if (!element || !element.getAttribute) {
+                        console.warn(`Equipment element ${index} is invalid:`, element);
+                        return;
+                    }
+                    
+                    const arenaSystem = this;
+                    element.onmouseenter = function(e) { 
+                        arenaSystem.simpleShowTooltip(e, 'equipment'); 
+                    };
+                    element.onmouseleave = function() { 
+                        arenaSystem.simpleDelayedHideTooltip(); 
+                    };
+                    element.style.cursor = 'help';
+                    element.style.textDecoration = 'underline dotted';
+                    element.style.color = '#a855f7';
+                    
+                    // Add fallback title
+                    element.title = 'Equipment tooltip';
+                    successCount++;
+                } catch (err) {
+                    console.warn(`Error setting up equipment tooltip ${index}:`, err);
+                }
+            });
+            
+            // Setup progress tooltips with better error handling  
+            progressElements.forEach((element, index) => {
+                try {
+                    if (!element || !element.getAttribute) {
+                        console.warn(`Progress element ${index} is invalid:`, element);
+                        return;
+                    }
+                    
+                    const arenaSystem = this;
+                    element.onmouseenter = function(e) { 
+                        arenaSystem.simpleShowTooltip(e, 'progress'); 
+                    };
+                    element.onmouseleave = function() { 
+                        arenaSystem.simpleDelayedHideTooltip(); 
+                    };
+                    element.style.cursor = 'help';
+                    element.style.textDecoration = 'underline dotted';
+                    element.style.color = '#a855f7';
+                    
+                    // Add fallback title
+                    const tooltipText = element.getAttribute('data-tooltip');
+                    if (tooltipText) {
+                        element.title = tooltipText;
+                    }
+                    successCount++;
+                } catch (err) {
+                    console.warn(`Error setting up progress tooltip ${index}:`, err);
+                }
+            });
+            
+            // Report results
+            if (successCount === totalElements) {
+                this.tooltipsSetupComplete = true;
+                this.updateTooltipStatus('success', `${successCount} gotowych`);
+            } else if (successCount > 0) {
+                this.tooltipsSetupComplete = true;
+                this.updateTooltipStatus('warning', `${successCount}/${totalElements} gotowych`);
+            } else {
+                this.updateTooltipStatus('error', 'Nie udało się skonfigurować tooltipów');
+                // Retry after delay
+                setTimeout(() => {
+                    if (!this.tooltipsSetupComplete) {
+                        this.setupTooltips();
+                    }
+                }, 3000);
+            }
+            
+            this.setupInProgress = false;
+            
+        } catch (error) {
+            console.error('Critical error in setupTooltips:', error);
+            this.updateTooltipStatus('error', `Błąd: ${error.message}`);
+            this.setupInProgress = false;
+            
+            // Retry after delay for critical errors
+            setTimeout(() => {
+                if (!this.tooltipsSetupComplete) {
+                    this.setupTooltips();
+                }
+            }, 5000);
+        }
+    }
+    
+    updateTooltipStatus(type, message) {
+        const statusElement = document.getElementById('tooltip-status');
+        if (!statusElement) return;
+        
+        // Prevent rapid updates (debounce)
+        const now = Date.now();
+        const newStatus = `${type}:${message}`;
+        
+        // If same status or updated very recently, skip
+        if (this.currentStatus === newStatus || (now - this.lastStatusUpdate) < 1000) {
+            return;
+        }
+        
+        // Clear any pending status updates
+        if (this.statusUpdateTimer) {
+            clearTimeout(this.statusUpdateTimer);
+        }
+        
+        this.statusUpdateTimer = setTimeout(() => {
+            let bgColor, icon;
+            switch(type) {
+                case 'loading': bgColor = '#f59e0b'; icon = '🔧'; break;
+                case 'success': bgColor = '#22c55e'; icon = '✅'; break;
+                case 'warning': bgColor = '#f97316'; icon = '⚠️'; break;
+                case 'error': bgColor = '#dc2626'; icon = '❌'; break;
+                default: bgColor = '#6b7280'; icon = '❓'; break;
+            }
+            
+            statusElement.style.backgroundColor = bgColor;
+            statusElement.textContent = `${icon} Tooltips: ${message}`;
+            
+            this.currentStatus = newStatus;
+            this.lastStatusUpdate = Date.now();
+            this.statusUpdateTimer = null;
+        }, 100); // Small delay to prevent flickering
+    }
+    
+    
+    fixTooltips() {
+        console.log('🔄 Manual tooltip fix requested');
+        this.updateTooltipStatus('loading', 'Naprawianie...');
+        this.cleanupTooltips();
+        
+        // Clean up any orphaned tooltips
+        const orphanedTooltips = document.querySelectorAll('#simple-arena-tooltip, .arena-tooltip');
+        orphanedTooltips.forEach(tooltip => tooltip.remove());
+        
+        // Reset setup flags to allow re-setup
+        this.tooltipsSetupComplete = false;
+        this.setupInProgress = false;
+        
+        // Clear any pending timers
+        if (this.statusUpdateTimer) {
+            clearTimeout(this.statusUpdateTimer);
+            this.statusUpdateTimer = null;
+        }
+        
+        setTimeout(() => {
+            this.setupTooltips();
+        }, 500);
+    }
+    
+    handleProgressTooltip(event) {
+        try {
+            console.log('🔍 Progress tooltip triggered for:', event.target);
+            const tooltip = event.target.getAttribute('data-tooltip');
+            if (tooltip) {
+                const title = event.target.textContent;
+                console.log('📊 Showing progress tooltip:', title, tooltip);
+                this.showTooltip(event, title, tooltip);
+            } else {
+                console.warn('⚠️ Progress tooltip missing data-tooltip attribute');
+            }
+        } catch (error) {
+            console.error('❌ Error in handleProgressTooltip:', error);
+        }
+    }
+    
+    simpleShowTooltip(event, type) {
+        
+        // Clear any pending hide timer to prevent conflicts
+        if (this.simpleTooltipHideTimer) {
+            clearTimeout(this.simpleTooltipHideTimer);
+            this.simpleTooltipHideTimer = null;
+        }
+        
+        // Force immediate cleanup of existing tooltip
+        const existingTooltip = document.getElementById('simple-arena-tooltip');
+        if (existingTooltip) {
+            existingTooltip.remove();
+        }
+        this.currentSimpleTooltip = null;
+        
+        let title = 'Tooltip';
+        let description = 'Opis niedostępny';
+        
+        if (type === 'stat') {
+            const statName = event.target.getAttribute('data-stat');
+            const equipmentType = event.target.getAttribute('data-equipment');
+            
+            if (statName && this.statDescriptions[statName]) {
+                const stat = this.statDescriptions[statName];
+                title = stat.title;
+                description = stat.description + (stat.effect ? `\n\n${stat.effect}` : '');
+            } else if (equipmentType && this.equipmentDescriptions[equipmentType]) {
+                const equipment = this.equipmentDescriptions[equipmentType];
+                title = equipment.title;
+                description = equipment.description;
+            }
+        } else if (type === 'equipment') {
+            // Check for data-item first (dynamic equipment)
+            const dataItem = event.target.getAttribute('data-item');
+            const equipmentType = event.target.getAttribute('data-equipment');
+            
+            if (dataItem) {
+                try {
+                    const itemData = JSON.parse(dataItem);
+                    title = itemData.name;
+                    description = `Moc: ${itemData.power}`;
+                    if (itemData.statDescription) description = itemData.statDescription;
+                    if (itemData.flavorText) description += `\n\n${itemData.flavorText}`;
+                } catch (e) {
+                    description = 'Błąd parsowania danych przedmiotu';
+                }
+            } else if (equipmentType && this.equipmentDescriptions[equipmentType]) {
+                // Handle static equipment labels
+                const equipment = this.equipmentDescriptions[equipmentType];
+                title = equipment.title;
+                description = equipment.description;
+            }
+        } else if (type === 'progress') {
+            const tooltip = event.target.getAttribute('data-tooltip');
+            if (tooltip) {
+                title = event.target.textContent;
+                description = tooltip;
+            }
+        }
+        
+        // Create elegant tooltip
+        const tooltip = document.createElement('div');
+        tooltip.id = 'simple-arena-tooltip';
+        tooltip.style.position = 'fixed';
+        tooltip.style.zIndex = '10000';
+        tooltip.style.backgroundColor = 'rgba(0, 0, 0, 0.92)'; // Dark semi-transparent
+        tooltip.style.color = '#ffffff'; // White text
+        tooltip.style.padding = '12px 16px';
+        tooltip.style.border = '1px solid rgba(255, 255, 255, 0.3)'; // Subtle white border
+        tooltip.style.borderRadius = '8px';
+        tooltip.style.fontSize = '14px';
+        tooltip.style.fontWeight = 'normal';
+        tooltip.style.maxWidth = '320px';
+        tooltip.style.boxShadow = '0 8px 32px rgba(0,0,0,0.6)';
+        tooltip.style.lineHeight = '1.5';
+        tooltip.style.backdropFilter = 'blur(8px)';
+        tooltip.style.opacity = '0';
+        tooltip.style.transition = 'opacity 0.2s ease-in-out';
+        tooltip.style.pointerEvents = 'auto'; // Allow interactions with tooltip itself
+        
+        tooltip.innerHTML = `<div style="color: #a855f7; font-weight: bold; margin-bottom: 6px; font-size: 15px;">${title}</div><div style="color: #e5e7eb;">${description.replace(/\n/g, '<br>')}</div>`;
+        
+        // Position tooltip
+        const rect = event.target.getBoundingClientRect();
+        const cursorX = event.clientX;
+        const cursorY = event.clientY;
+        
+        document.body.appendChild(tooltip);
+        
+        // Get tooltip dimensions after adding to DOM
+        const tooltipRect = tooltip.getBoundingClientRect();
+        
+        // Position tooltip above target element with proper spacing
+        let left = rect.left + window.scrollX + (rect.width / 2) - (tooltipRect.width / 2);
+        let top = rect.top + window.scrollY - tooltipRect.height - 15;
+        
+        // Adjust if tooltip goes off screen OR would interfere with cursor
+        const minTopMargin = 20; // Minimum distance from cursor
+        if (top < window.scrollY || (top + tooltipRect.height + minTopMargin > cursorY + window.scrollY && cursorY + window.scrollY > top - minTopMargin)) {
+            // Show below if no room above or would interfere with cursor
+            top = rect.bottom + window.scrollY + 25; // Extra spacing to avoid cursor
+        }
+        if (left < 0) {
+            left = 10; // Margin from left edge
+        }
+        if (left + tooltipRect.width > window.innerWidth) {
+            left = window.innerWidth - tooltipRect.width - 10; // Margin from right edge
+        }
+        
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = top + 'px';
+        
+        // Add hover events to tooltip itself to prevent hiding when hovering over it
+        const arenaSystem = this;
+        tooltip.addEventListener('mouseenter', () => {
+            if (arenaSystem.simpleTooltipHideTimer) {
+                clearTimeout(arenaSystem.simpleTooltipHideTimer);
+                arenaSystem.simpleTooltipHideTimer = null;
+            }
+        });
+        
+        tooltip.addEventListener('mouseleave', () => {
+            arenaSystem.simpleDelayedHideTooltip();
+        });
+        
+        // Fade in tooltip
+        setTimeout(() => {
+            tooltip.style.opacity = '1';
+        }, 10);
+        
+        this.currentSimpleTooltip = tooltip;
+    }
+    
+    simpleHideTooltip() {
+        // Clear any pending hide timer to prevent race conditions
+        if (this.simpleTooltipHideTimer) {
+            clearTimeout(this.simpleTooltipHideTimer);
+            this.simpleTooltipHideTimer = null;
+        }
+        
+        const tooltip = document.getElementById('simple-arena-tooltip');
+        if (tooltip) {
+            tooltip.style.opacity = '0';
+            // Use timer reference for proper cleanup
+            this.simpleTooltipHideTimer = setTimeout(() => {
+                if (tooltip.parentNode) {
+                    tooltip.remove();
+                }
+                this.simpleTooltipHideTimer = null; // Clean up timer reference
+            }, 200); // Match transition duration
+        }
+        this.currentSimpleTooltip = null;
+    }
+    
+    simpleDelayedHideTooltip() {
+        if (this.simpleTooltipHideTimer) {
+            clearTimeout(this.simpleTooltipHideTimer);
+        }
+        
+        this.simpleTooltipHideTimer = setTimeout(() => {
+            try {
+                const tooltip = document.getElementById('simple-arena-tooltip');
+                if (tooltip) {
+                    tooltip.style.opacity = '0';
+                    setTimeout(() => {
+                        if (tooltip.parentNode) {
+                            tooltip.remove();
+                        }
+                    }, 200); // Match transition duration
+                }
+                this.currentSimpleTooltip = null;
+            } catch (error) {
+                console.warn('Error hiding simple tooltip:', error);
+            } finally {
+                this.simpleTooltipHideTimer = null;
+            }
+        }, 300); // Same delay as complex system
+    }
+    
+    
+    
+    handleStatTooltip(event) {
+        try {
+            const statName = event.target.getAttribute('data-stat');
+            const equipmentType = event.target.getAttribute('data-equipment');
+            
+            if (statName && this.statDescriptions[statName]) {
+                const stat = this.statDescriptions[statName];
+                this.showTooltip(event, stat.title, stat.description, null, stat.effect);
+            } else if (equipmentType && this.equipmentDescriptions[equipmentType]) {
+                const equipment = this.equipmentDescriptions[equipmentType];
+                this.showTooltip(event, equipment.title, equipment.description);
+            }
+        } catch (error) {
+            console.error('Error in handleStatTooltip:', error);
+        }
+    }
+    
+    handleEquipmentTooltip(event) {
+        try {
+            console.log('🔍 Equipment tooltip triggered for:', event.target);
+            const dataItem = event.target.getAttribute('data-item');
+            
+            if (!dataItem) {
+                console.warn('⚠️ Equipment tooltip missing data-item attribute');
+                return;
+            }
+            
+            const itemData = JSON.parse(dataItem);
+            console.log('🎯 Parsed equipment data:', itemData);
+            
+            // Use new 2-line format: statDescription + flavorText
+            let description = '';
+            
+            if (itemData.statDescription) {
+                description = itemData.statDescription;
+            } else {
+                // Fallback for items without statDescription
+                description = `Moc: ${itemData.power}`;
+            }
+            
+            if (itemData.flavorText) {
+                description += `\n${itemData.flavorText}`;
+            } else if (itemData.effect && this.effectDescriptions[itemData.effect]) {
+                // Fallback: add effect description if no flavor text
+                description += `\n${this.effectDescriptions[itemData.effect]}`;
+            }
+            
+            console.log('🎲 Showing equipment tooltip:', itemData.name, description);
+            this.showTooltip(event, itemData.name, description, itemData.rarity);
+        } catch (error) {
+            console.error('❌ Error in handleEquipmentTooltip:', error, 'Raw data:', event.target.getAttribute('data-item'));
+        }
+    }
+
+    showTooltip(event, title, description, rarity = null, effect = null) {
+        console.log('✨ showTooltip called for:', title);
+        try {
+            
+            // Clear any existing timers and tooltips first
+            console.log('   Clearing existing tooltips before creating new one');
+            this.clearTooltip();
+            
+            // If tooltip already exists and showing same content, don't recreate
+            if (this.currentArenaTooltip && this.currentArenaTooltip.dataset.title === title) {
+                console.log('🔄 Tooltip already showing for:', title);
+                return;
+            }
+            
+            const tooltip = document.createElement('div');
+            tooltip.className = `arena-tooltip ${rarity ? `arena-tooltip-rarity-${rarity}` : ''}`;
+            tooltip.dataset.title = title; // Store title for comparison
+            
+            let content = `<div class="arena-tooltip-header">${title}</div>`;
+            content += `<div>${description.replace(/\n/g, '<br>')}</div>`;
+            if (effect) {
+                content += `<div class="arena-tooltip-effect">${effect}</div>`;
+            }
+            
+            tooltip.innerHTML = content;
+            document.body.appendChild(tooltip);
+            
+            
+            // Position tooltip with better calculations
+            const rect = event.target.getBoundingClientRect();
+            const tooltipWidth = tooltip.offsetWidth;
+            const tooltipHeight = tooltip.offsetHeight;
+            
+            let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+            let top = rect.top - tooltipHeight - 10;
+            
+            // Ensure tooltip stays within viewport with better margins
+            const margin = 10;
+            if (left < margin) left = margin;
+            if (left + tooltipWidth > window.innerWidth - margin) {
+                left = window.innerWidth - tooltipWidth - margin;
+            }
+            if (top < margin) {
+                top = rect.bottom + margin;
+            }
+            
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+            tooltip.style.zIndex = '9999'; // Force high z-index
+            
+            
+            // Add hover events to tooltip itself to prevent hiding when hovering over it
+            tooltip.addEventListener('mouseenter', () => {
+                if (this.tooltipHideTimer) {
+                    clearTimeout(this.tooltipHideTimer);
+                    this.tooltipHideTimer = null;
+                }
+            });
+            
+            tooltip.addEventListener('mouseleave', () => {
+                this.delayedHideTooltip();
+            });
+        
+            // Show tooltip immediately - don't wait for timer
+            tooltip.classList.add('show');
+            
+            // Keep timer for cleanup but show immediately
+            this.tooltipTimer = setTimeout(() => {
+                this.tooltipTimer = null;
+            }, 100);
+            
+            this.currentArenaTooltip = tooltip;
+            
+        } catch (error) {
+            console.error('❌ Error in showTooltip:', error);
+        }
+    }
+    
+    // Comprehensive cleanup method for tooltips and timers
+    cleanupTooltips() {
+        // Clear all timers
+        if (this.tooltipTimer) {
+            clearTimeout(this.tooltipTimer);
+            this.tooltipTimer = null;
+        }
+        
+        if (this.tooltipHideTimer) {
+            clearTimeout(this.tooltipHideTimer);
+            this.tooltipHideTimer = null;
+        }
+        
+        if (this.statusUpdateTimer) {
+            clearTimeout(this.statusUpdateTimer);
+            this.statusUpdateTimer = null;
+        }
+        
+        // Clear simple tooltip timers
+        if (this.simpleTooltipHideTimer) {
+            clearTimeout(this.simpleTooltipHideTimer);
+            this.simpleTooltipHideTimer = null;
+        }
+        
+        // Remove current tooltip
+        if (this.currentArenaTooltip) {
+            this.currentArenaTooltip.remove();
+            this.currentArenaTooltip = null;
+        }
+        
+        // Remove current simple tooltip
+        if (this.currentSimpleTooltip) {
+            this.currentSimpleTooltip.remove();
+            this.currentSimpleTooltip = null;
+        }
+        
+        // Clean up any orphaned tooltips
+        const orphanedTooltips = document.querySelectorAll('.arena-tooltip, #simple-arena-tooltip');
+        orphanedTooltips.forEach(tooltip => tooltip.remove());
+        
+        // Reset tooltip setup flags to allow re-setup
+        this.tooltipsSetupComplete = false;
+        this.setupInProgress = false;
+        
+        // Clear hasTooltipEvents flags from all elements
+        const tooltipElements = document.querySelectorAll('.arena-stat-tooltip, .arena-equipment-tooltip, .arena-progress-tooltip');
+        tooltipElements.forEach(element => {
+            if (element.hasTooltipEvents) {
+                element.hasTooltipEvents = false;
+            }
+        });
+    }
+    
+    clearTooltip() {
+        if (this.tooltipTimer) {
+            clearTimeout(this.tooltipTimer);
+            this.tooltipTimer = null;
+        }
+        
+        if (this.tooltipHideTimer) {
+            clearTimeout(this.tooltipHideTimer);
+            this.tooltipHideTimer = null;
+        }
+        
+        if (this.currentArenaTooltip) {
+            this.currentArenaTooltip.remove();
+            this.currentArenaTooltip = null;
+        }
+        
+        const orphanedTooltips = document.querySelectorAll('.arena-tooltip');
+        orphanedTooltips.forEach(tooltip => tooltip.remove());
+    }
+    
+    // Setup global event handlers for defensive tooltip cleanup
+    setupGlobalEventHandlers() {
+        // Hide tooltips when clicking outside of tooltip elements
+        document.addEventListener('click', (event) => {
+            const clickedElement = event.target;
+            const isTooltipElement = clickedElement.closest('.arena-stat-tooltip, .arena-equipment-tooltip, .arena-progress-tooltip, .arena-tooltip');
+            
+            // Clean up complex tooltip system
+            if (!isTooltipElement && this.currentArenaTooltip) {
+                this.clearTooltip();
+            }
+            
+            // Clean up simple tooltip system
+            if (!isTooltipElement && this.currentSimpleTooltip) {
+                this.simpleHideTooltip();
+            }
+        });
+        
+        document.addEventListener('scroll', () => {
+            if (this.currentArenaTooltip) {
+                this.clearTooltip();
+            }
+            if (this.currentSimpleTooltip) {
+                this.simpleHideTooltip();
+            }
+        });
+        
+        window.addEventListener('resize', () => {
+            if (this.currentArenaTooltip) {
+                this.clearTooltip();
+            }
+            if (this.currentSimpleTooltip) {
+                this.simpleHideTooltip();
+            }
+        });
+    }
+    
+    // Public method to cleanup when arena view is closed
+    onViewClosed() {
+        console.log('🧹 Arena view closed, cleaning up tooltips');
+        this.cleanupTooltips();
+    }
+    
+    delayedHideTooltip() {
+        if (this.tooltipHideTimer) {
+            clearTimeout(this.tooltipHideTimer);
+        }
+        
+        this.tooltipHideTimer = setTimeout(() => {
+            try {
+                if (this.currentArenaTooltip) {
+                    this.currentArenaTooltip.remove();
+                    this.currentArenaTooltip = null;
+                }
+            } catch (error) {
+                console.warn('Error hiding tooltip:', error);
+            } finally {
+                this.tooltipHideTimer = null;
+            }
+        }, 300);
+    }
+
+    // === Game Mechanics ===
+    
+    processActivity() {
+        const arena = gameData.minigames.arena;
+        
+        // Ensure arena data exists
+        if (!arena) {
+            console.error('Arena data not found during processActivity');
+            return;
+        }
+        
+        if (!arena.unlocked) return;
+        
+        // Prevent progress until arena has been visited for the first time
+        if (!arena.hasBeenVisited) return;
+
+        // Throttle activity processing to 20 FPS (50ms intervals) for slower progression
+        const now = Date.now();
+        if (now - this.lastActivityTime < 50) return;
+        this.lastActivityTime = now;
+
+        // Initialize new real-time progress systems if not exists
+        if (!arena.combatPhase) arena.combatPhase = { current: 0, total: 5, progress: 0 };
+        if (!arena.stamina) arena.stamina = { current: 100, max: 100 };
+        if (!arena.skillTraining) arena.skillTraining = { active: null, progress: 0 };
+        if (!arena.equipmentCondition) arena.equipmentCondition = { weapon: 100, armor: 100, accessory: 100, artefakt: 100 };
+
+        // Handle resting
+        if (arena.isResting) {
+            const currentTime = Date.now() / 1000;
+            const restElapsed = currentTime - arena.restStartTime;
+            
+            if (restElapsed >= arena.restDuration) {
+                // Finish resting
+                arena.isResting = false;
+                arena.hp = arena.maxHp;
+                arena.currentActivity = "Szukanie przeciwników...";
+                arena.activityProgress = 0;
+                
+                // Choose completion message based on rest activity type
+                let restCompletedMessage;
+                if (arena.restActivity === 'masturbacja') {
+                    const orgasmMessages = [
+                        `😈 <strong>INTENSYWNY ODPOCZYNEK!</strong> Po trzykrotnym orgazmie Momo zasnęła szybko, odzyskując pełnię sił. Jej ciało wciąż drży z rozkoszy.`,
+                        `💦 <strong>BŁOGOŚĆ OSIĄGNIĘTA!</strong> Masturbacja zakończyła się serią intensywnych orgazmów. Momo budzi się całkowicie zregenerowana i podniecona.`,
+                        `🔥 <strong>SAMOZASPOKOJENIE ZAKOŃCZONE!</strong> Po długiej sesji intymnej Momo odzyskała wszystkie siły. Jej oczy błyszczą z satysfakcji.`
+                    ];
+                    restCompletedMessage = orgasmMessages[Math.floor(Math.random() * orgasmMessages.length)];
+                } else if (arena.restActivity === 'intensywna_masturbacja') {
+                    const intensiveMessages = [
+                        `💥 <strong>WYBUCHOWY FINAŁ!</strong> Po intensywnej sesji samozaspokojenia Momo odpoczęła błyskawicznie. Jej ciało pulsuje energią.`,
+                        `⚡ <strong>ELEKTRYZUJĄCE DOZNANIA!</strong> Wielokrotne orgazmy przywróciły Momo pełną moc w rekordowym tempie. Jest gotowa na więcej!`,
+                        `🌟 <strong>EKSTAZA KOMPLETNA!</strong> Intensywna masturbacja zakończona totalną euforią. Momo nigdy nie czuła się lepiej!`
+                    ];
+                    restCompletedMessage = intensiveMessages[Math.floor(Math.random() * intensiveMessages.length)];
+                } else {
+                    // Standard rest messages
+                    const standardMessages = [
+                        `😌 <strong>REGENERACJA ZAKOŃCZONA!</strong> Momo wstaje wypoczęta, jej ciało emanuje odnowioną energią. Skóra lśni, a oczy płoną gotowością do walki!`,
+                        `💪 <strong>SIŁY ODZYSKANE!</strong> Odpoczynek przywrócił Momo do pełnej mocy. Jej mięśnie są napięte, a serce bije rytmicznie w oczekiwaniu na następne wyzwanie!`,
+                        `✨ <strong>ODRODZENIE!</strong> Momo kończy medytację bojową. Jej aura jest silniejsza niż wcześniej, ciało gotowe na kolejne próby!`
+                    ];
+                    restCompletedMessage = standardMessages[Math.floor(Math.random() * standardMessages.length)];
+                }
+                
+                this.addLog(restCompletedMessage);
+                arena.restActivity = null; // Clear rest activity type
+            } else {
+                // Show rest progress with dynamic activity type
+                const restProgress = (restElapsed / arena.restDuration) * 100;
+                arena.activityProgress = restProgress;
+                
+                // Gradually restore HP and stamina during rest
+                arena.hp = Math.min(arena.maxHp, arena.hp + 0.5);
+                arena.stamina.current = Math.min(arena.stamina.max, arena.stamina.current + 1.0);
+            }
+            return;
+        }
+
+        // Check if HP is too low to continue
+        if (arena.hp <= 0) {
+            this.startRest();
+            return;
+        }
+        
+        // Apply cipka effects during activity
+        this.applyCipkaEffects();
+
+        // Gradually drain HP during activity (much slower to prevent constant rest)
+        if (arena.currentQuest) {
+            const hpDrain = 0.001 + (arena.currentQuest.difficulty * 0.0005);
+            arena.hp = Math.max(0, arena.hp - hpDrain);
+        } else {
+            // Minimal drain when searching
+            arena.hp = Math.max(0, arena.hp - 0.0002);
+        }
+
+        // Auto-start quest if none is active
+        if (!arena.currentQuest) {
+            this.startRandomQuest();
+        } else {
+            // Process quest based on format
+            if (arena.currentQuest.objectives) {
+                this.processObjectiveQuest();
+            } else {
+                this.processLegacyQuest();
+            }
+        }
+    }
+
+    startRandomQuest() {
+        const arena = gameData.minigames.arena;
+        const availableQuests = this.quests.filter(q => q.difficulty <= arena.level + 2);
+        
+        if (availableQuests.length === 0) return;
+        
+        const randomQuest = availableQuests[Math.floor(Math.random() * availableQuests.length)];
+        
+        // Deep copy the quest to avoid modifying the original
+        arena.currentQuest = JSON.parse(JSON.stringify(randomQuest));
+        
+        // Detect quest format and initialize accordingly
+        if (arena.currentQuest.objectives && Array.isArray(arena.currentQuest.objectives) && arena.currentQuest.objectives.length > 0) {
+            // New objective-based quest format
+            arena.currentObjectiveIndex = 0;
+            arena.activityProgress = 0;
+            arena.questTotalProgress = 0;
+            arena.currentActivity = `${arena.currentQuest.objectives[0].name}`;
+            
+            this.addLog(`⚔️ <strong>NOWE WYZWANIE!</strong> Momo rozpoczyna "${randomQuest.name}". Cel: ${arena.currentQuest.objectives[0].description}`);
+        } else {
+            // Old stage-based quest format - fallback to original system
+            arena.activityProgress = 0;
+            arena.currentActivity = `Walka: ${randomQuest.name}`;
+            
+            this.addLog(`⚔️ <strong>NOWE WYZWANIE!</strong> Momo rozpoczyna "${randomQuest.name}". Jej oczy błyszczą determinacją w obliczu ${randomQuest.monster}!`);
+        }
+        
+        // Reset combat systems for new quest
+        arena.combatPhase = { current: 0, total: 5, progress: 0 };
+        arena.skillTraining = { active: this.selectRandomSkillToTrain(), progress: 0 };
+    }
+
+    processObjectiveQuest() {
+        const arena = gameData.minigames.arena;
+        const quest = arena.currentQuest;
+        
+        // Defensive checks
+        if (!quest || !quest.objectives || typeof arena.currentObjectiveIndex !== 'number') {
+            console.warn('Invalid quest state, resetting quest');
+            arena.currentQuest = null;
+            return;
+        }
+        
+        const currentObjective = quest.objectives[arena.currentObjectiveIndex];
+        
+        if (!currentObjective) {
+            this.completeQuest();
+            return;
+        }
+        
+        // Progress calculation - balanced speed
+        const levelBonus = arena.level <= 5 ? 1.3 : (arena.level <= 10 ? 1.1 : 1.0);
+        const baseProgressGain = ((Math.random() * 0.003) + 0.003) * levelBonus;
+        
+        // Different progress rates for different activity types
+        let progressMultiplier = 1.0;
+        if (currentObjective.type === 'scout') progressMultiplier = 1.2; // Scouting is faster
+        if (currentObjective.type === 'boss') progressMultiplier = 0.7; // Boss fights are slower
+        
+        const progressGain = baseProgressGain * progressMultiplier;
+        arena.activityProgress += progressGain;
+        
+        // Update combat systems
+        this.updateCombatPhases(progressGain);
+        this.updateSkillTraining();
+        this.updateStamina();
+        this.updateEquipmentCondition();
+        
+        // Check if we should complete an action (kill a monster, gather an item, etc.)
+        this.checkForActionCompletion(currentObjective, progressGain);
+        
+        // Check if current objective is completed
+        if (currentObjective.current >= currentObjective.target) {
+            this.completeCurrentObjective();
+        }
+    }
+
+    processLegacyQuest() {
+        const arena = gameData.minigames.arena;
+        
+        // Use original quest progression logic for old-format quests
+        const levelBonus = arena.level <= 5 ? 1.5 : (arena.level <= 10 ? 1.2 : 1.0);
+        const progressGain = ((Math.random() * 0.003) + 0.003) * levelBonus;
+        arena.activityProgress += progressGain;
+        
+        // Update combat systems
+        this.updateCombatPhases(progressGain);
+        this.updateSkillTraining();
+        this.updateStamina();
+        this.updateEquipmentCondition();
+        
+        // Complete quest when progress reaches 100%
+        if (arena.activityProgress >= 100) {
+            this.completeLegacyQuest();
+        }
+    }
+
+    completeLegacyQuest() {
+        const arena = gameData.minigames.arena;
+        const quest = arena.currentQuest;
+        const totalPower = this.calculateTotalPower();
+        
+        const baseSuccessRate = Math.min(0.95, 0.5 + (totalPower / (quest.difficulty * 20)));
+        const success = Math.random() < baseSuccessRate;
+        
+        if (success) {
+            const goldReward = quest.difficulty * 10 + Math.floor(Math.random() * quest.difficulty * 5);
+            const expReward = quest.difficulty * 5 + Math.floor(Math.random() * quest.difficulty * 3);
+            
+            gameData.goldCoins += goldReward;
+            arena.experience += expReward;
+            arena.questsCompleted++;
+            arena.goldEarned += goldReward;
+            
+            // Enhanced victory messages
+            const victoryMessages = [
+                `⚔️ <strong>ZWYCIĘSTWO!</strong> ${quest.monster} poległ pod ciosami Momo! Jej ciało emanuje mocą po triumfie. Zdobyto ${expReward} EXP i ${goldReward} złota.`,
+                `🏆 <strong>TRIUMF!</strong> Momo zdominowała ${quest.monster} swoją finezją! Pot zwycięstwa spływa po jej skórze. Nagroda: ${expReward} EXP, ${goldReward} złota.`,
+                `💥 <strong>DOSKONAŁE WYKONANIE!</strong> ${quest.monster} nie miał szans przeciwko Momo! Jej oczy błyszczą z satysfakcji. Zdobyto ${expReward} EXP i ${goldReward} złota.`
+            ];
+            const randomVictory = victoryMessages[Math.floor(Math.random() * victoryMessages.length)];
+            this.addLog(randomVictory);
+            
+            // Chance for item drop
+            if (Math.random() < 0.3) {
+                this.dropRandomItem(quest.difficulty);
+            }
+            
+            // Level up check
+            while (arena.experience >= arena.experienceToNext) {
+                this.levelUp();
+            }
+            
+        } else {
+            this.handleDefeat(quest);
+        }
+        
+        // Clear current quest
+        arena.currentQuest = null;
+        arena.activityProgress = 0;
+        arena.currentActivity = "Szukanie przeciwników...";
+        
+        // Update base stats
+        this.updateBaseStats();
+    }
+
+    checkForActionCompletion(objective, progressGain) {
+        const arena = gameData.minigames.arena;
+        
+        // Calculate chance for completing an action based on progress and type
+        let actionChance = 0;
+        
+        switch (objective.type) {
+            case 'scout':
+                actionChance = progressGain * 8; // Reduced scouting frequency
+                break;
+            case 'hunt':
+                actionChance = progressGain * 7; // Reduced monster kill frequency
+                break;
+            case 'gather':
+                actionChance = progressGain * 6; // Reduced item gathering frequency
+                break;
+            case 'boss':
+                actionChance = progressGain * 3; // Boss phases even rarer
+                break;
+            default:
+                actionChance = progressGain * 5;
+                break;
+        }
+        
+        if (Math.random() < actionChance && objective.current < objective.target) {
+            this.completeAction(objective);
+        }
+    }
+
+    completeAction(objective) {
+        const arena = gameData.minigames.arena;
+        
+        // Increment objective progress
+        objective.current++;
+        
+        // Give per-action rewards
+        if (objective.perActionReward) {
+            if (objective.perActionReward.gold) {
+                gameData.goldCoins += objective.perActionReward.gold;
+                arena.goldEarned += objective.perActionReward.gold;
+            }
+            if (objective.perActionReward.exp) {
+                arena.experience += objective.perActionReward.exp;
+            }
+        }
+        
+        // Show action completion message with rewards
+        const progressText = `${objective.current}/${objective.target}`;
+        const rewardText = objective.perActionReward ? 
+            `+${objective.perActionReward.gold || 0} złota, +${objective.perActionReward.exp || 0} EXP` : '';
+        
+        // Only show message sometimes to avoid spam
+        if (Math.random() < 0.3) {
+            this.addLog(`✅ ${objective.actionText}! (${progressText}) ${rewardText}`);
+        }
+    }
+
+    completeCurrentObjective() {
+        const arena = gameData.minigames.arena;
+        const quest = arena.currentQuest;
+        
+        // Defensive checks
+        if (!quest || !quest.objectives || typeof arena.currentObjectiveIndex !== 'number') {
+            console.warn('Invalid quest state during objective completion');
+            arena.currentQuest = null;
+            return;
+        }
+        
+        const completedObjective = quest.objectives[arena.currentObjectiveIndex];
+        
+        if (!completedObjective) {
+            console.warn('No objective to complete, finishing quest');
+            this.completeQuest();
+            return;
+        }
+        
+        // Give completion rewards
+        if (completedObjective.completionReward) {
+            if (completedObjective.completionReward.gold) {
+                gameData.goldCoins += completedObjective.completionReward.gold;
+                arena.goldEarned += completedObjective.completionReward.gold;
+            }
+            if (completedObjective.completionReward.exp) {
+                arena.experience += completedObjective.completionReward.exp;
+            }
+            
+            // Item chance
+            if (completedObjective.completionReward.itemChance && Math.random() < completedObjective.completionReward.itemChance) {
+                this.dropRandomItem(arena.currentQuest.difficulty);
+            }
+        }
+        
+        // Update total quest progress
+        arena.questTotalProgress += completedObjective.progressWeight;
+        
+        this.addLog(`🎯 <strong>CEL UKOŃCZONY!</strong> ${completedObjective.name} - Momo odniosła sukces! +${completedObjective.completionReward.gold || 0} złota, +${completedObjective.completionReward.exp || 0} EXP`);
+        
+        // Move to next objective
+        arena.currentObjectiveIndex++;
+        arena.activityProgress = 0;
+        
+        if (arena.currentObjectiveIndex < quest.objectives.length) {
+            // Start next objective
+            const nextObjective = quest.objectives[arena.currentObjectiveIndex];
+            arena.currentActivity = nextObjective.name;
+            this.addLog(`🎯 <strong>NOWY CEL:</strong> ${nextObjective.description}`);
+        } else {
+            // All objectives completed, finish quest
+            this.completeQuest();
+        }
+    }
+
+    updateCombatPhases(progressGain) {
+        const arena = gameData.minigames.arena;
+        const phases = ["🔍 Obserwacja", "⚔️ Atak", "🛡️ Obrona", "💥 Finisz", "🏆 Triumf"];
+        
+        arena.combatPhase.progress += progressGain * 3.0; // Reasonable phase progression speed
+        
+        if (arena.combatPhase.progress >= 20) {
+            arena.combatPhase.current = Math.min(arena.combatPhase.total - 1, arena.combatPhase.current + 1);
+            arena.combatPhase.progress = 0;
+            
+            if (arena.combatPhase.current < phases.length) {
+                const phaseText = phases[arena.combatPhase.current];
+                if (Math.random() < 0.01) { // Much lower chance for log spam
+                    this.addLog(`⚡ <strong>FAZA WALKI:</strong> ${phaseText} - Momo przechodzi do następnej fazy walki!`);
+                }
+            }
+        }
+    }
+
+    updateSkillTraining() {
+        const arena = gameData.minigames.arena;
+        if (!arena.skillTraining.active) return;
+        
+        arena.skillTraining.progress += Math.random() * 0.5 + 0.2;
+        
+        if (arena.skillTraining.progress >= 100) {
+            const skill = arena.skillTraining.active;
+            arena.skillProgress[skill] += Math.random() * 1 + 0.5;
+            arena.skillTraining.progress = 0;
+            arena.skillTraining.active = this.selectRandomSkillToTrain();
+            
+            const skillNames = { sila: 'Siła', zrecznosc: 'Zręczność', inteligencja: 'Inteligencja', szczescie: 'Szczęście' };
+            if (Math.random() < 0.005) { // Much lower chance for log spam
+                this.addLog(`💪 <strong>TRENING:</strong> ${skillNames[skill]} Momo wzrasta podczas walki!`);
+            }
+        }
+    }
+
+    updateStamina() {
+        const arena = gameData.minigames.arena;
+        
+        // Stamina drains slower than HP but recovers faster
+        if (arena.currentQuest) {
+            // Calculate stamina efficiency from level and equipment
+            const levelBonus = Math.max(0.5, 1 - (arena.level * 0.02)); // 2% reduction per level, min 50%
+            const equipmentBonus = this.calculateEquipmentStaminaBonus();
+            const finalDrain = 0.015 * levelBonus * equipmentBonus;
+            arena.stamina.current = Math.max(0, arena.stamina.current - finalDrain);
+        } else {
+            arena.stamina.current = Math.min(arena.stamina.max, arena.stamina.current + 0.3);
+        }
+    }
+
+
+    updateEquipmentCondition() {
+        const arena = gameData.minigames.arena;
+        
+        // Equipment slowly degrades during combat
+        if (arena.currentQuest) {
+            const degradeRate = 0.02;
+            Object.keys(arena.equipmentCondition).forEach(slot => {
+                if (arena.equipment[slot]) {
+                    arena.equipmentCondition[slot] = Math.max(0, arena.equipmentCondition[slot] - degradeRate);
+                }
+            });
+        } else {
+            // Equipment slowly repairs when not fighting
+            const repairRate = 0.05;
+            Object.keys(arena.equipmentCondition).forEach(slot => {
+                arena.equipmentCondition[slot] = Math.min(100, arena.equipmentCondition[slot] + repairRate);
+            });
+        }
+    }
+
+    selectRandomSkillToTrain() {
+        const skills = ['sila', 'zrecznosc', 'inteligencja', 'szczescie'];
+        return skills[Math.floor(Math.random() * skills.length)];
+    }
+
+    completeQuest() {
+        const arena = gameData.minigames.arena;
+        const quest = arena.currentQuest;
+        
+        // Always succeed with the new objective system (failure handled at objective level)
+        // Give final quest rewards
+        if (quest.finalReward) {
+            if (quest.finalReward.gold) {
+                gameData.goldCoins += quest.finalReward.gold;
+                arena.goldEarned += quest.finalReward.gold;
+            }
+            if (quest.finalReward.exp) {
+                arena.experience += quest.finalReward.exp;
+            }
+            
+            // Final item chance
+            if (quest.finalReward.itemChance && Math.random() < quest.finalReward.itemChance) {
+                this.dropRandomItem(quest.difficulty);
+            }
+        }
+        
+        arena.questsCompleted++;
+        
+        // Enhanced victory messages
+        const victoryMessages = [
+            `🏆 <strong>QUEST UKOŃCZONY!</strong> Momo triumfuje nad ${quest.monster}! Wszystkie cele zrealizowane z mistrzowską precyzją. Finalna nagroda: +${quest.finalReward.gold || 0} złota, +${quest.finalReward.exp || 0} EXP`,
+            `⚔️ <strong>PEŁNE ZWYCIĘSTWO!</strong> ${quest.name} zakończony sukcesem! Momo pokonała wszystkie wyzwania. Jej ciało drży z satysfakcji. Nagroda: +${quest.finalReward.gold || 0} złota, +${quest.finalReward.exp || 0} EXP`,
+            `💥 <strong>MISJA UKOŃCZONA!</strong> Momo błyszczy triumfem nad ${quest.monster}! Wszystkie etapy przeszła z gracją. Finał: +${quest.finalReward.gold || 0} złota, +${quest.finalReward.exp || 0} EXP`,
+            `✨ <strong>TOTALNY TRIUMF!</strong> ${quest.name} - pełny sukces! Momo dominuje pole bitwy swoją determinacją. Ostateczna nagroda: +${quest.finalReward.gold || 0} złota, +${quest.finalReward.exp || 0} EXP`,
+            `🔥 <strong>LEGEND QUEST!</strong> Momo kończy ${quest.name} w wielkim stylu! Jej oczy płoną dumą z osiągnięcia. Nagroda: +${quest.finalReward.gold || 0} złota, +${quest.finalReward.exp || 0} EXP`
+        ];
+        const randomVictory = victoryMessages[Math.floor(Math.random() * victoryMessages.length)];
+        this.addLog(randomVictory);
+        
+        // Level up check (handle multiple level-ups)
+        while (arena.experience >= arena.experienceToNext) {
+            this.levelUp();
+        }
+        
+        // Clear current quest
+        arena.currentQuest = null;
+        arena.currentObjectiveIndex = 0;
+        arena.activityProgress = 0;
+        arena.questTotalProgress = 0;
+        arena.currentActivity = "Szukanie przeciwników...";
+        
+        // Update base stats based on skill progress
+        this.updateBaseStats();
+    }
+
+    startRest() {
+        const arena = gameData.minigames.arena;
+        arena.isResting = true;
+        arena.restStartTime = Date.now() / 1000;
+        arena.currentQuest = null;
+        arena.questProgress = 0;
+        arena.activityProgress = 0;
+        
+        // Determine rest type and duration based on cipka effects
+        const sensitivity = arena.cipkaEffects.sensitivity;
+        const wetness = arena.cipkaEffects.wetness;
+        
+        if (sensitivity > 0.7 && wetness > 0.7) {
+            // Very high sensitivity and wetness - intensywna masturbacja
+            arena.restDuration = 20 + (arena.level * 1); // Level-based: 20-45s range
+            arena.restActivity = 'intensywna_masturbacja';
+            arena.currentActivity = "Intensywna Masturbacja";
+            const intensiveMessages = [
+                `🔥 <strong>DESPERACKA POTRZEBA!</strong> Momo jest tak napalona, że nie może się powstrzymać. Zaczyna intensywną masturbację, jej ręce wędrują po całym ciele... (${arena.restDuration}s)`,
+                `💥 <strong>EKSPLOZJA POŻĄDANIA!</strong> Kombinacja wyczerpania i podniecenia zmusza Momo do natychmiastowej akcji. Intensywnie się masturbuje... (${arena.restDuration}s)`,
+                `⚡ <strong>NIEPOHAMOWANA ŻĄDZA!</strong> Momo nie może się oprzeć - jej ciało płonie. Rozpoczyna dziko intensywną sesję samozaspokojenia... (${arena.restDuration}s)`
+            ];
+            const randomMessage = intensiveMessages[Math.floor(Math.random() * intensiveMessages.length)];
+            this.addLog(randomMessage);
+        } else if (sensitivity > 0.5 || wetness > 0.5) {
+            // Moderate sensitivity or wetness - regular masturbacja
+            arena.restDuration = 30 + (arena.level * 2); // Level-based: 30-75s range
+            arena.restActivity = 'masturbacja';
+            arena.currentActivity = "Masturbacja";
+            const masturbationMessages = [
+                `😈 <strong>INTYMNA PRZERWA!</strong> Wyczerpanie miesza się z podnieceniem. Momo decyduje się na masturbację, by odzyskać siły w przyjemny sposób... (${arena.restDuration}s)`,
+                `💦 <strong>SŁODKA REGENERACJA!</strong> Momo czuje, że potrzebuje czegoś więcej niż zwykły odpoczynek. Zaczyna się masturbować, by połączyć przyjemność z regeneracją... (${arena.restDuration}s)`,
+                `🔥 <strong>ZMYSŁOWY ODPOCZYNEK!</strong> Zamiast zwykłej regeneracji, Momo wybiera bardziej... osobistą metodę. Jej ręce wędrują w intymne miejsca... (${arena.restDuration}s)`
+            ];
+            const randomMessage = masturbationMessages[Math.floor(Math.random() * masturbationMessages.length)];
+            this.addLog(randomMessage);
+        } else {
+            // Low sensitivity/wetness - standard rest
+            arena.restDuration = 60 + (arena.level * 4); // Level-based: 60-160s range
+            arena.restActivity = 'standard';
+            arena.currentActivity = "Odpoczynek";
+            const standardMessages = [
+                `💤 <strong>POTRZEBA REGENERACJI</strong> Momo opada z wyczerpania, jej ciało domaga się odpoczynku. Zamyka oczy i skupia się na odzyskaniu sił... (${arena.restDuration}s)`,
+                `😴 <strong>MEDYTACJA BOJOWA</strong> Wyczerpanie bierze górę. Momo siada w pozycji lotosu, jej oddech staje się głęboki i rytmiczny... (${arena.restDuration}s)`,
+                `💫 <strong>CZAS NA REGENERACJĘ</strong> Momo czuje, jak energia opuszcza jej ciało. Kładzie się wygodnie, pozwalając swojemu ciału się zregenerować... (${arena.restDuration}s)`
+            ];
+            const randomMessage = standardMessages[Math.floor(Math.random() * standardMessages.length)];
+            this.addLog(randomMessage);
+        }
+    }
+
+    calculateTotalPower() {
+        const arena = gameData.minigames.arena;
+        let power = 0;
+        
+        // Base stats
+        power += arena.stats.sila;
+        power += arena.stats.zrecznosc;
+        power += arena.stats.inteligencja;
+        power += arena.stats.szczescie;
+        
+        // Physical attributes with bonuses
+        power += arena.stats.cyce * 2; // Cyce give bonus to enemy morale (negative for them)
+        power += arena.stats.dupa * 1.5; // Dupa gives bonus to agility
+        
+        if (arena.equipment.weapon) power += arena.equipment.weapon.power;
+        if (arena.equipment.armor) power += arena.equipment.armor.power;
+        if (arena.equipment.accessory) power += arena.equipment.accessory.power;
+        if (arena.equipment.artefakt) power += arena.equipment.artefakt.power;
+        
+        return Math.floor(power);
+    }
+
+    calculateEquipmentStaminaBonus() {
+        const arena = gameData.minigames.arena;
+        let bonus = 1.0; // Base multiplier (no bonus)
+        
+        // Equipment bonuses - better equipment reduces stamina drain
+        if (arena.equipment.weapon) {
+            bonus -= Math.min(0.1, arena.equipment.weapon.power * 0.002); // Max 10% reduction
+        }
+        if (arena.equipment.armor) {
+            bonus -= Math.min(0.15, arena.equipment.armor.power * 0.003); // Max 15% reduction
+        }
+        if (arena.equipment.accessory) {
+            bonus -= Math.min(0.08, arena.equipment.accessory.power * 0.002); // Max 8% reduction
+        }
+        if (arena.equipment.artefakt) {
+            bonus -= Math.min(0.2, arena.equipment.artefakt.power * 0.004); // Max 20% reduction
+        }
+        
+        // Ensure bonus doesn't go below 0.5 (max 50% total reduction)
+        return Math.max(0.5, bonus);
+    }
+
+    handleDefeat(quest) {
+        const arena = gameData.minigames.arena;
+        
+        // Base defeat message with more engaging descriptions
+        const defeatMessages = [
+            `💥 <strong>${quest.name}</strong> zakończony porażką! ${quest.monster} przytłoczył Momo swoją potęgą, zmuszając ją do uległości...`,
+            `⚔️ <strong>PORAŻKA!</strong> ${quest.monster} okazał się zbyt doświadczony dla Momo. Jej ciało drży po intensywnej walce...`,
+            `🔥 <strong>${quest.name}</strong> nieudany! ${quest.monster} zdominował Momo, pozostawiając ją wyczerpaną i pokonaną...`,
+            `💫 <strong>KLĘSKA!</strong> Momo nie mogła sprostać ${quest.monster}. Jej oddech jest szybki, a ciało pokryte potem...`
+        ];
+        const randomMessage = defeatMessages[Math.floor(Math.random() * defeatMessages.length)];
+        this.addLog(randomMessage);
+        
+        // Determine what happens based on monster type and current cipka status
+        const defeatOutcomes = [
+            {
+                condition: () => quest.monster.includes("Succubus"),
+                action: () => {
+                    if (arena.stats.cipka === "Dziewicza") {
+                        arena.stats.cipka = "Naznaczona";
+                        arena.cipkaEffects.corruption += 0.3;
+                        arena.cipkaEffects.sensitivity += 0.2;
+                        arena.cipkaEffects.magic_resistance = Math.max(0, arena.cipkaEffects.magic_resistance - 0.2);
+                        this.addLog(`💋 <strong>NAZNACZENIE!</strong> Succubus zostawiła swój znak na ciele Momo. Jej cipka jest teraz <strong>Naznaczona</strong> mocą demona. Korupcja +30%, Wrażliwość +20%!`);
+                    } else {
+                        arena.cipkaEffects.corruption = Math.min(1, arena.cipkaEffects.corruption + 0.1);
+                        this.addLog(`💋 Succubus próbowała naznacz Momo, ale jej cipka jest już zbyt doświadczona. Korupcja +10%.`);
+                    }
+                }
+            },
+            {
+                condition: () => quest.monster.includes("Amazonka"),
+                action: () => {
+                    if (["Dziewicza", "Wilgotna"].includes(arena.stats.cipka)) {
+                        arena.stats.cipka = "Rozciągnięta";
+                        arena.cipkaEffects.sensitivity = Math.max(0, arena.cipkaEffects.sensitivity - 0.1);
+                        arena.cipkaEffects.wetness = Math.min(1, arena.cipkaEffects.wetness + 0.3);
+                        this.addLog(`🏹 <strong>DOMINACJA!</strong> Dzika Amazonka użyła swoich narzędzi. Cipka Momo jest teraz <strong>Rozciągnięta</strong>. Wilgotność +30%!`);
+                    } else {
+                        arena.cipkaEffects.wetness = Math.min(1, arena.cipkaEffects.wetness + 0.1);
+                        this.addLog(`🏹 Amazonka próbowała zdominować Momo, ale jej ciało jest już przyzwyczajone. Wilgotność +10%.`);
+                    }
+                }
+            },
+            {
+                condition: () => quest.monster.includes("Wiedźma"),
+                action: () => {
+                    arena.stats.cipka = "Przeklęta";
+                    arena.cipkaEffects.magic_resistance = Math.max(0, arena.cipkaEffects.magic_resistance - 0.5);
+                    arena.cipkaEffects.corruption = Math.min(1, arena.cipkaEffects.corruption + 0.4);
+                    arena.cipkaEffects.sensitivity = Math.min(1, arena.cipkaEffects.sensitivity + 0.3);
+                    this.addLog(`🔮 <strong>KLĄTWA!</strong> Stara Wiedźma rzuciła na Momo potężną klątwę. Jej cipka jest teraz <strong>Przeklęta</strong>. Odporność Mag. -50%, Korupcja +40%!`);
+                }
+            },
+            {
+                condition: () => quest.monster.includes("Bogini"),
+                action: () => {
+                    arena.stats.cipka = "Błogosławiona";
+                    arena.cipkaEffects.magic_resistance = Math.min(1, arena.cipkaEffects.magic_resistance + 0.3);
+                    arena.cipkaEffects.corruption = Math.max(0, arena.cipkaEffects.corruption - 0.2);
+                    arena.cipkaEffects.sensitivity = Math.min(1, arena.cipkaEffects.sensitivity + 0.1);
+                    this.addLog(`✨ <strong>BŁOGOSŁAWIEŃSTWO!</strong> Bogini Miłości błogosławi Momo. Jej cipka jest teraz <strong>Błogosławiona</strong>. Odporność Mag. +30%, Korupcja -20%!`);
+                }
+            },
+            {
+                condition: () => quest.monster.includes("Minotaur"),
+                action: () => {
+                    if (["Dziewicza", "Wilgotna", "Rozgrzana"].includes(arena.stats.cipka)) {
+                        arena.stats.cipka = "Zniszczona";
+                        arena.cipkaEffects.sensitivity = Math.max(0, arena.cipkaEffects.sensitivity - 0.3);
+                        arena.cipkaEffects.wetness = Math.min(1, arena.cipkaEffects.wetness + 0.5);
+                        arena.cipkaEffects.recovery_time = Math.min(2, arena.cipkaEffects.recovery_time + 0.5);
+                        this.addLog(`🐂 <strong>ZNISZCZENIE!</strong> Żelazny Minotaur nie miał litości. Cipka Momo została <strong>Zniszczona</strong>. Wrażliwość -30%, Wilgotność +50%!`);
+                    } else {
+                        arena.cipkaEffects.wetness = Math.min(1, arena.cipkaEffects.wetness + 0.2);
+                        this.addLog(`🐂 Minotaur próbował zdominować Momo, ale jej ciało wytrzymało atak. Wilgotność +20%.`);
+                    }
+                }
+            },
+            {
+                condition: () => quest.monster.includes("Demon"),
+                action: () => {
+                    arena.cipkaEffects.corruption = Math.min(1, arena.cipkaEffects.corruption + 0.2);
+                    arena.cipkaEffects.magic_resistance = Math.max(0, arena.cipkaEffects.magic_resistance - 0.1);
+                    arena.cipkaEffects.sensitivity = Math.min(1, arena.cipkaEffects.sensitivity + 0.15);
+                    this.addLog(`👹 <strong>DEMONICZNE DOTKNIĘCIE!</strong> Demon pozostawił swój ślad na ciele Momo. Korupcja +20%, Wrażliwość +15%!`);
+                }
+            },
+            {
+                condition: () => quest.monster.includes("Anioł"),
+                action: () => {
+                    arena.cipkaEffects.corruption = Math.max(0, arena.cipkaEffects.corruption - 0.15);
+                    arena.cipkaEffects.magic_resistance = Math.min(1, arena.cipkaEffects.magic_resistance + 0.1);
+                    arena.cipkaEffects.sensitivity = Math.min(1, arena.cipkaEffects.sensitivity + 0.05);
+                    this.addLog(`👼 <strong>ANIELSKI DOTYK!</strong> Anioł oczyszcza część korupcji z ciała Momo. Korupcja -15%, Odporność Mag. +10%!`);
+                }
+            },
+            {
+                condition: () => true, // Default case
+                action: () => {
+                    const genericOutcomes = [
+                        `😈 <strong>DOMINACJA!</strong> ${quest.monster} wykorzystał moment słabości Momo. Jej ciało drży, ale duch pozostaje nieugięty.`,
+                        `⚔️ <strong>BOLESNA LEKCJA!</strong> ${quest.monster} pokazał Momo jej miejsce. Pot spływa po jej skórze, a oddech jest ciężki.`,
+                        `🩸 <strong>SUROWA RZECZYWISTOŚĆ!</strong> ${quest.monster} nie miał litości. Momo leży pokonana, ale jej oczy płoną żądzą rewanżu.`,
+                        `💥 <strong>PRZYTŁACZAJĄCA SIŁA!</strong> ${quest.monster} zdominował Momo swoją potęgą. Jej ciało jest wyczerpane, ale pragnienie zwycięstwa pozostaje.`,
+                        `🔥 <strong>INTENSYWNE STARCIE!</strong> ${quest.monster} zmusił Momo do poddania. Jej skóra jest rozgrzana, a serce bije szybko.`,
+                        `💫 <strong>LEKCJA POKORY!</strong> ${quest.monster} pokazał Momo, co to prawdziwa moc. Drży z wyczerpania, ale jej determinacja nie słabnie.`
+                    ];
+                    const randomOutcome = genericOutcomes[Math.floor(Math.random() * genericOutcomes.length)];
+                    this.addLog(randomOutcome);
+                }
+            }
+        ];
+        
+        // Apply the first matching outcome
+        const outcome = defeatOutcomes.find(o => o.condition());
+        if (outcome) {
+            outcome.action();
+        }
+        
+        // Additional HP damage from defeat
+        arena.hp = Math.max(0, arena.hp - 10);
+    }
+
+    levelUp() {
+        const arena = gameData.minigames.arena;
+        
+        // Ensure experience doesn't go negative or overflow
+        const excessExp = arena.experience - arena.experienceToNext;
+        
+        arena.level++;
+        arena.experienceToNext = Math.floor(arena.experienceToNext * 1.5);
+        arena.experience = Math.max(0, excessExp); // Carry over excess experience
+        
+        // Award level up items and bonuses
+        this.awardLevelUpItems();
+        
+        const skills = ['sila', 'zrecznosc', 'inteligencja', 'szczescie']; // Only trainable stats for level-up
+        const skillNames = { sila: 'Siła', zrecznosc: 'Zręczność', inteligencja: 'Inteligencja', szczescie: 'Szczęście', cyce: 'Cyce', dupa: 'Dupa' };
+        
+        const randomStat = skills[Math.floor(Math.random() * skills.length)];
+        const statIncrease = Math.floor(Math.random() * 3) + 1;
+        
+        if (arena.skillProgress[randomStat] !== undefined) {
+            arena.skillProgress[randomStat] += statIncrease * 10;
+        }
+        
+        const goldReward = arena.level * 50;
+        gameData.goldCoins += goldReward;
+        arena.goldEarned += goldReward;
+        
+        const levelUpMessages = [
+            `🌟 <strong>EWOLUCJA MOCY!</strong> Momo osiągnęła poziom ${arena.level}! Jej ${skillNames[randomStat]} wzrosła o ${statIncrease} punktów. Ciało przeszywa fala energii! Bonus: ${goldReward} złota.`,
+            `⭐ <strong>TRANSCENDENCJA!</strong> Poziom ${arena.level} odblokowany! ${skillNames[randomStat]} Momo zwiększyła się o ${statIncrease}. Czuje, jak moc przepływa przez jej żyły! Złoto: ${goldReward}.`,
+            `💫 <strong>PRZEBUDZENIE SIŁY!</strong> Momo awansowała na poziom ${arena.level}! Jej ${skillNames[randomStat]} rozwinęła się o ${statIncrease} punktów. Jej ciało drży z nowej mocy! Nagroda: ${goldReward} złota.`,
+            `✨ <strong>METAMORFOZA!</strong> Poziom ${arena.level} osiągnięty! ${skillNames[randomStat]} Momo wzmocniła się o ${statIncrease}. Jej aura staje się bardziej intensywna! Bonus: ${goldReward} złota.`
+        ];
+        const randomLevelUp = levelUpMessages[Math.floor(Math.random() * levelUpMessages.length)];
+        this.addLog(randomLevelUp);
+        
+        // Major milestone rewards and cipka status changes
+        if (arena.level % 5 === 0) {
+            const bonusGold = arena.level * 100;
+            gameData.goldCoins += bonusGold;
+            arena.goldEarned += bonusGold;
+            this.addLog(`🏆 <strong>KAMIEŃ MILOWY!</strong> Poziom ${arena.level} osiągnięty! Bonus: ${bonusGold} złota!`);
+            
+            // Update cipka status based on level milestones
+            this.updateCipkaStatus();
+        }
+    }
+
+    updateCipkaStatus() {
+        const arena = gameData.minigames.arena;
+        const level = arena.level;
+        
+        if (level >= 25) {
+            arena.stats.cipka = "Legendarna";
+            this.addLog(`💎 <strong>TRANSCENDENCJA INTYMNOŚCI!</strong> Cipka Momo przekroczyła wszystkie granice, osiągając status <strong>Legendarny</strong>! Emanuje nieziemską aurą pożądania...`);
+        } else if (level >= 20) {
+            arena.stats.cipka = "Doświadczona";
+            this.addLog(`🔥 <strong>MISTRZOSTWO CIAŁA!</strong> Niezliczone walki ukształtowały cipkę Momo. Jest teraz <strong>Doświadczona</strong> i gotowa na każde wyzwanie!`);
+        } else if (level >= 15) {
+            arena.stats.cipka = "Zapoznana";
+            this.addLog(`💫 <strong>ODKRYWANIE GRANIC!</strong> Cipka Momo przeszła intensywną metamorfozę. Jest teraz <strong>Zapoznana</strong> z najgłębszymi tajnikami walki!`);
+        } else if (level >= 10) {
+            arena.stats.cipka = "Rozgrzana";
+            this.addLog(`🌡️ <strong>PŁOMIEŃ NAMIĘTNOŚCI!</strong> Walki rozpaliły ogień w ciele Momo. Jej cipka staje się <strong>Rozgrzana</strong>, pulsując z energią!`);
+        } else if (level >= 5) {
+            arena.stats.cipka = "Wilgotna";
+            this.addLog(`💧 <strong>PIERWSZE PRZEBUDZENIE!</strong> Intensywność walk budzi nowe odczucia w Momo. Jej cipka staje się <strong>Wilgotna</strong> z oczekiwania...`);
+        }
+    }
+
+    applyCipkaEffects() {
+        const arena = gameData.minigames.arena;
+        
+        // Gradual changes during combat
+        if (arena.currentQuest) {
+            // More dynamic wetness changes during combat
+            const intensityMultiplier = arena.currentQuest.difficulty / 10;
+            arena.cipkaEffects.wetness = Math.min(1, arena.cipkaEffects.wetness + (0.003 * intensityMultiplier));
+            
+            // Sensitivity increases during combat phases
+            if (arena.combatPhase && arena.combatPhase.current >= 2) {
+                arena.cipkaEffects.sensitivity = Math.min(1, arena.cipkaEffects.sensitivity + 0.002);
+            }
+            
+            // High corruption affects sensitivity more dramatically
+            if (arena.cipkaEffects.corruption > 0.5) {
+                arena.cipkaEffects.sensitivity = Math.min(1, arena.cipkaEffects.sensitivity + 0.001);
+            }
+            
+            // Magic resistance slowly recovers over time
+            if (arena.cipkaEffects.magic_resistance < 1) {
+                arena.cipkaEffects.magic_resistance = Math.min(1, arena.cipkaEffects.magic_resistance + 0.0002);
+            }
+            
+            // Corruption slowly decreases over time if not reinforced
+            if (arena.cipkaEffects.corruption > 0) {
+                arena.cipkaEffects.corruption = Math.max(0, arena.cipkaEffects.corruption - 0.0001);
+            }
+        }
+        
+        // Rest helps recover from extreme states
+        if (arena.isResting) {
+            arena.cipkaEffects.wetness = Math.max(0, arena.cipkaEffects.wetness - 0.005);
+            arena.cipkaEffects.sensitivity = Math.max(0.5, arena.cipkaEffects.sensitivity - 0.002);
+            arena.cipkaEffects.recovery_time = Math.max(1, arena.cipkaEffects.recovery_time - 0.001);
+        }
+        
+        // Apply cipka effects to combat performance
+        const effects = arena.cipkaEffects;
+        
+        // High corruption can unlock special abilities but increases risk
+        if (effects.corruption > 0.8) {
+            // Chance for corruption-based combat bonus
+            if (Math.random() < 0.001) {
+                this.addLog(`🖤 <strong>MROK DAJE MOC!</strong> Korupcja przepływa przez ciało Momo jak czarna magia, wzmacniając jej każdy ruch! Jej oczy błyszczą niebezpiecznym blaskiem...`);
+                arena.experience += 10;
+            }
+        }
+        
+        // Low magic resistance makes her vulnerable to magical attacks
+        if (effects.magic_resistance < 0.3 && Math.random() < 0.001) {
+            this.addLog(`🔮 <strong>PRZEBICIE OBRONY!</strong> Magiczne energie przenikają przez osłabione bariery Momo! Jej ciało drży pod wpływem niestabilnych sił...`);
+            arena.hp = Math.max(0, arena.hp - 2);
+        }
+        
+        // High sensitivity affects her performance
+        if (effects.sensitivity > 0.8 && Math.random() < 0.001) {
+            this.addLog(`💫 <strong>ZMYSŁOWE PRZECIĄŻENIE!</strong> Każdy dotyk, każdy ruch wywołuje w Momo fale intensywnych doznań! Jej oddech staje się ciężki, trudno jej się skupić...`);
+            arena.hp = Math.max(0, arena.hp - 1);
+        }
+    }
+
+    updateBaseStats() {
+        const arena = gameData.minigames.arena;
+        const allSkills = ['sila', 'zrecznosc', 'inteligencja', 'szczescie', 'cyce', 'dupa'];
+        
+        allSkills.forEach(skill => {
+            const progress = Math.floor(arena.skillProgress[skill]);
+            const baseValue = skill === 'sila' ? 10 : 
+                             skill === 'zrecznosc' ? 6 : 
+                             skill === 'inteligencja' ? 5 : 
+                             skill === 'szczescie' ? 7 : 
+                             10; // cyce and dupa start at 10
+                             
+            // Base stat = initial value + progress bonus
+            const bonusFromProgress = Math.floor(progress / 10); // Every 10 progress = +1 stat
+            const newValue = Math.min(baseValue + bonusFromProgress, arena.skillCaps[skill]);
+            
+            if (skill === 'cyce' || skill === 'dupa') {
+                // Physical attributes stay at 10 but can't go higher
+                arena.stats[skill] = Math.min(10, newValue);
+            } else {
+                arena.stats[skill] = newValue;
+            }
+        });
+    }
+
+    awardLevelUpItems() {
+        // 20% chance for item drop on level up
+        if (Math.random() < 0.2) {
+            this.dropRandomItem(Math.min(10, gameData.minigames.arena.level));
+        }
+    }
+
+    dropRandomItem(difficulty) {
+        const arena = gameData.minigames.arena;
+        const availableItems = this.items.filter(item => {
+            const itemLevel = item.power / 5; // Rough item level based on power
+            return itemLevel <= difficulty + 2;
+        });
+        
+        if (availableItems.length === 0) return;
+        
+        const randomItem = availableItems[Math.floor(Math.random() * availableItems.length)];
+        const currentEquipped = arena.equipment[randomItem.type];
+        
+        // Only equip if it's better or if no item is equipped
+        if (!currentEquipped || randomItem.power > currentEquipped.power) {
+            arena.equipment[randomItem.type] = randomItem;
+            arena.itemsFound++;
+            
+            let rarityColor = '';
+            switch(randomItem.rarity) {
+                case 'common': rarityColor = '🤍'; break;
+                case 'uncommon': rarityColor = '💚'; break;
+                case 'rare': rarityColor = '💙'; break;
+                case 'legendary': rarityColor = '🧡'; break;
+                default: rarityColor = '⚪'; break;
+            }
+            
+            const effectText = randomItem.effect ? ` z efektem ${this.effectDescriptions[randomItem.effect] || randomItem.effect}` : '';
+            this.addLog(`✨ <strong>ZNALEZISKO!</strong> ${rarityColor} Momo zdobyła "${randomItem.name}" (${randomItem.power} mocy)${effectText}! Automatycznie wyposażono.`);
+        }
+    }
+}
+
+// Create global instance
+window.ArenaSystem = new ArenaSystem();
+
+// ======= EMERGENCY DEBUG COMMANDS =======
+// These are temporary emergency functions to repair the broken system
+
+// Force unlock arena (call from console: forceUnlockArena())
+window.forceUnlockArena = function() {
+    console.log('🎆 EMERGENCY: Force unlocking arena...');
+    
+    // Ensure game data structure exists
+    if (!window.gameData) {
+        console.error('❌ gameData not found!');
+        return false;
+    }
+    
+    if (!window.gameData.minigames) {
+        console.log('⚠️ Creating missing minigames structure');
+        window.gameData.minigames = {};
+    }
+    
+    if (!window.gameData.minigames.arena) {
+        console.log('⚠️ Creating missing arena structure');
+        window.gameData.minigames.arena = {
+            unlocked: false,
+            hasBeenVisited: false,
+            level: 1,
+            experience: 0,
+            experienceToNext: 100,
+            hp: 100,
+            maxHp: 100,
+            stamina: { current: 100, max: 100 },
+            isResting: false,
+            restStartTime: 0,
+            restDuration: 90,
+            currentQuest: null,
+            currentActivity: "Gotowa do walki",
+            activityProgress: 0,
+            currentStage: 0,
+            stageProgress: 0,
+            questProgress: 0,
+            questsCompleted: 0
+        };
+    }
+    
+    // Force unlock
+    window.gameData.minigames.arena.unlocked = true;
+    console.log('✅ Arena unlocked in gameData');
+    
+    // Check if Momo exists and trigger callback
+    if (window.characterData && window.characterData.momo && window.characterData.momo.arenaCallbacks) {
+        try {
+            window.characterData.momo.arenaCallbacks.onArenaUnlock.call(window.characterData.momo);
+            console.log('✅ Momo arena callback triggered');
+        } catch (error) {
+            console.error('❌ Error triggering Momo callback:', error);
+        }
+    }
+    
+    console.log('✨ Arena force unlock complete! Try accessing arena now.');
+    return true;
+};
+
+// Debug arena state (call from console: debugArenaState())
+window.debugArenaState = function() {
+    console.log('🔍=== ARENA DEBUG STATE ===');
+    console.log('gameData exists:', !!window.gameData);
+    console.log('gameData.minigames exists:', !!window.gameData?.minigames);
+    console.log('gameData.minigames.arena exists:', !!window.gameData?.minigames?.arena);
+    console.log('Arena unlocked:', window.gameData?.minigames?.arena?.unlocked);
+    console.log('ArenaSystem exists:', !!window.ArenaSystem);
+    console.log('Momo character exists:', !!window.characterData?.momo);
+    console.log('Momo unlocked:', window.gameData?.characters?.momo?.unlocked);
+    console.log('Story system exists:', !!window.storySystem);
+    console.log('=========================');
+};
+
+// Test arena functionality (call from console: testArenaFunctionality())
+window.testArenaFunctionality = function() {
+    console.log('🧪 Testing arena functionality...');
+    
+    if (!window.ArenaSystem) {
+        console.error('❌ ArenaSystem not found!');
+        return false;
+    }
+    
+    try {
+        // Test basic methods
+        console.log('Testing processActivity:', typeof window.ArenaSystem.processActivity);
+        console.log('Testing displayArena:', typeof window.ArenaSystem.displayArena);
+        
+        // Try to display arena
+        if (typeof window.ArenaSystem.displayArena === 'function') {
+            window.ArenaSystem.displayArena();
+            console.log('✅ Arena display attempted');
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Error testing arena:', error);
+        return false;
+    }
+};
+
+console.log('🎆 Emergency debug commands loaded:');
+console.log('- forceUnlockArena() - Force unlock the arena');
+console.log('- debugArenaState() - Show current arena state');
+console.log('- testArenaFunctionality() - Test arena functions');
+
