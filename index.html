@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wszystkie Moje Potwory</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- Game Metadata -->
+    <meta name="description" content="Wszystkie Moje Potwory - Incremental character collection game">
+    <meta name="author" content="Monster Game Studio">
+</head>
+<body class="bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white min-h-screen overflow-hidden">
+    
+    <!-- Top Status Bar -->
+    <div id="top-status-bar" class="status-bar">
+        <!-- Left Side - Game Statistics -->
+        <div id="status-left" class="status-section">
+            <span id="status-girls" class="status-item">Dziewczyny: <span id="girls-count">0</span></span>
+            <span id="status-active" class="status-item">Wybrana: <span id="active-girl-name">Brak</span></span>
+            <span id="status-lust" class="status-item">💗 <span id="lust-amount">0</span></span>
+            <span id="status-sparks" class="status-item">⚡ <span id="sparks-amount">0</span></span>
+            <span id="status-essence" class="status-item">🔮 <span id="essence-amount">0</span></span>
+            <span id="status-gold" class="status-item">💰 <span id="gold-amount">0</span></span>
+        </div>
+        
+        <!-- Center - News Ticker -->
+        <div id="news-ticker-container" class="news-ticker-container" onclick="toggleNewsTicker()">
+            <div id="news-ticker-text" class="news-ticker-text">Dwór wydaje się żyć własnym życiem, pełnym tajemnic i spokoju.</div>
+        </div>
+        
+        <!-- Right Side - Debug Tools -->
+        <div id="status-right" class="status-section">
+            <button id="debug-add-million" class="debug-btn" onclick="addMillionLP()">+1M LP</button>
+            <button id="debug-max-bp" class="debug-btn" onclick="maxBondToThreshold()">Max BP</button>
+            <button id="debug-max-all" class="debug-btn" onclick="maxAllForTesting()">MAX ALL</button>
+            <button id="debug-arena" class="debug-btn" onclick="unlockMomoArena()">Arena</button>
+            <button id="debug-reset" class="debug-btn debug-danger" onclick="resetGameProgress()">Reset</button>
+        </div>
+    </div>
+    
+    <!-- Dynamic Background Container -->
+    <div id="background-container" class="fixed inset-0 z-0">
+        <div id="bg-layer-far" class="absolute inset-0 opacity-30"></div>
+        <div id="bg-layer-mid" class="absolute inset-0 opacity-50"></div>
+        <div id="bg-layer-near" class="absolute inset-0 opacity-20"></div>
+    </div>
+    
+    <!-- Particle Effects Container -->
+    <div id="particle-container" class="fixed inset-0 z-10 pointer-events-none overflow-hidden"></div>
+    
+    <!-- Game Container -->
+    <div id="game-container" class="w-full status-adjusted-height flex relative z-10">
+        
+        <!-- Left Panel - Active Character & Clicking Area -->
+        <div id="left-panel" class="w-1/4 h-full bg-black/20 backdrop-blur-sm border-r border-white/10 flex flex-col">
+            <!-- Panel Header -->
+            <div class="bg-white/5 p-4 border-b border-white/10">
+                <h2 id="left-panel-title" class="text-xl font-bold text-center">Aktywna Postać</h2>
+            </div>
+            
+            <!-- Active Character Display -->
+            <div id="active-character-container" class="flex-1 p-4">
+                <div id="active-character-display" class="h-full flex flex-col items-center justify-center">
+                    <div class="text-center mb-4">
+                        <div id="active-character-name" class="text-2xl font-bold mb-2">Wybierz postać</div>
+                        <div id="active-character-title" class="text-sm text-gray-300"></div>
+                    </div>
+                    
+                    <!-- Character Image - Clickable Area -->
+                    <div id="character-click-area" class="relative cursor-pointer group">
+                        <img id="active-character-image" 
+                             src="imgs/dwor.png" 
+                             alt="Character" 
+                             class="w-64 h-64 object-cover rounded-lg shadow-lg transition-transform group-hover:scale-105"
+                             onclick="handleCharacterClick()">
+                        
+                        <!-- Click Effect Animation -->
+                        <div id="click-effect" class="absolute inset-0 pointer-events-none"></div>
+                    </div>
+                    
+                    <!-- Character Stats -->
+                    <div id="character-stats" class="mt-4 text-center">
+                        <div id="character-level" class="text-lg font-semibold mb-2">Poziom: --</div>
+                        <div id="character-bond" class="text-sm text-purple-300 mb-1">Więź: --</div>
+                        <div id="character-production" class="text-sm text-green-300">Produkcja: -- LP/s</div>
+                    </div>
+                    
+                    <!-- Character Comments -->
+                    <div id="character-comment" class="mt-4 text-center text-sm italic text-gray-300 h-8">
+                        <!-- Dynamic character comments appear here -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Game Stats Footer -->
+            <div id="game-stats-footer" class="bg-white/5 p-4 border-t border-white/10">
+                <div class="text-center space-y-2">
+                    <div id="lust-points-display" class="text-xl font-bold text-pink-300">
+                        💗 <span id="lust-points">0</span> Pożądanie
+                    </div>
+                    <div id="lust-per-second" class="text-sm text-gray-300">
+                        +<span id="lps">0</span> LP/s
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Center Panel - Dynamic Content -->
+        <div id="center-panel" class="w-1/2 h-full bg-black/10 backdrop-blur-sm border-r border-white/10 flex flex-col">
+            <!-- Panel Header -->
+            <div class="bg-white/5 p-4 border-b border-white/10 flex justify-between items-center">
+                <h2 id="center-panel-title" class="text-xl font-bold">Dwór</h2>
+                <div id="center-panel-controls" class="flex space-x-2">
+                    <!-- Dynamic controls based on current view -->
+                </div>
+            </div>
+            
+            <!-- Main Content Area -->
+            <div id="main-character-display" class="flex-1 p-4 overflow-y-auto">
+                <!-- Welcome Screen -->
+                <div id="welcome-screen" class="h-full flex flex-col items-center justify-center text-center">
+                    <h1 class="text-4xl font-bold mb-4 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+                        Wszystkie Moje Potwory
+                    </h1>
+                    <p class="text-lg text-gray-300 mb-8 max-w-md">
+                        Witaj w swoim dworze. Kolekcjonuj postacie, rozwijaj więzi i odkrywaj ich historie.
+                    </p>
+                    <button id="start-game-btn" 
+                            class="btn-primary px-8 py-3 text-lg"
+                            onclick="startGame()">
+                        Napełnij go życiem
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Panel - Character List / Buildings -->
+        <div id="right-panel" class="w-1/4 h-full bg-black/20 backdrop-blur-sm flex flex-col">
+            <!-- Panel Header with Toggle -->
+            <div class="bg-white/5 p-4 border-b border-white/10">
+                <div class="flex justify-center space-x-2">
+                    <button id="characters-tab" 
+                            class="tab-button active px-4 py-2 rounded-lg transition-all"
+                            onclick="showCharactersTab()">
+                        Dziewczyny
+                    </button>
+                    <button id="buildings-tab" 
+                            class="tab-button px-4 py-2 rounded-lg transition-all"
+                            onclick="showBuildingsTab()">
+                        Budynki
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Characters Tab -->
+            <div id="characters-content" class="flex-1 overflow-y-auto">
+                <div id="characters-list" class="p-4">
+                    <!-- Characters will be dynamically populated here -->
+                </div>
+            </div>
+            
+            <!-- Buildings Tab -->
+            <div id="buildings-content" class="flex-1 overflow-y-auto hidden">
+                <div id="buildings-list" class="p-4">
+                    <!-- Buildings will be dynamically populated here -->
+                </div>
+            </div>
+            
+            <!-- Panel Footer -->
+            <div id="right-panel-footer" class="bg-white/5 p-4 border-t border-white/10">
+                <div class="text-center text-sm text-gray-400">
+                    <div id="game-version">v0.1.0</div>
+                    <div id="save-status" class="mt-1">Auto-save: włączony</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Container -->
+    <div id="modal-container" class="fixed inset-0 z-50 hidden">
+        <!-- Story Event Modal -->
+        <div id="story-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="bg-gradient-to-br from-purple-800 to-blue-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
+                <div id="story-modal-content" class="p-6">
+                    <!-- Story content will be populated here -->
+                </div>
+            </div>
+        </div>
+        
+    </div>
+    
+    <!-- Notification Container -->
+    <div id="notification-container" class="fixed top-4 right-4 z-40 space-y-2">
+        <!-- Notifications will be dynamically added here -->
+    </div>
+    
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="fixed inset-0 bg-gradient-to-br from-purple-900 to-blue-900 flex items-center justify-center z-50">
+        <div class="text-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-white mx-auto mb-4"></div>
+            <div class="text-xl font-bold">Ładowanie...</div>
+            <div class="text-sm text-gray-300 mt-2">Przygotowywanie dworu</div>
+        </div>
+    </div>
+    
+    <!-- Audio Elements -->
+    <audio id="click-sound" preload="auto">
+        <source src="sounds/clicking.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="crystal-sound" preload="auto">
+        <source src="sounds/krysztalki.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="notification-sound" preload="auto">
+        <source src="sounds/plim.mp3" type="audio/mpeg">
+    </audio>
+    
+    <!-- Debug Script -->
+    <script>
+        console.log('🚀 Starting game load...');
+        window.gameLoadStatus = {
+            startTime: Date.now(),
+            scriptsLoaded: [],
+            errors: []
+        };
+        
+        // Track script loading - only log actual loading errors, not gameplay errors
+        window.addEventListener('error', function(e) {
+            // Filter out module-related errors that are handled gracefully
+            const isModuleError = e.message && (
+                e.message.includes('moduleManager') || 
+                e.message.includes('getModule') ||
+                e.message.includes('updateCharacterExpression')
+            );
+            
+            if (!isModuleError) {
+                console.error('❌ Script error:', e.filename, e.message);
+                window.gameLoadStatus.errors.push({
+                    file: e.filename,
+                    error: e.message,
+                    line: e.lineno
+                });
+            } else {
+                // Log module errors at debug level only
+                console.debug('Module system handled error:', e.message);
+            }
+        });
+        
+        // Note: Enhanced module manager will be loaded from module-manager.js
+        console.log('📦 Preparing for enhanced module manager...');
+    </script>
+    
+    <!-- Core Game Scripts (in correct load order) -->
+    <script src="js/gameData.js"></script>
+    <script src="js/systems/module-manager.js"></script>
+    <script src="js/systems/dom-elements.js"></script>
+    <script src="js/systems/state-manager.js"></script>
+    <script src="js/systems/game-initializer.js"></script>
+    <script src="js/systems/game-logic.js"></script>
+    <script src="js/systems/ui.js"></script>
+    <script src="js/systems/character.js"></script>
+    <script src="js/systems/story.js"></script>
+    <script src="js/systems/views.js"></script>
+    <script src="js/systems/buildings.js"></script>
+    <script src="js/systems/sanctuarium.js"></script>
+    <script src="js/systems/passive-tree.js"></script>
+    
+    <!-- Visual Enhancement Systems -->
+    <script src="js/systems/background.js"></script>
+    <script src="js/systems/particles.js"></script>
+    <script src="js/utils/animations.js"></script>
+    <script src="js/systems/expressions.js"></script>
+    <script src="js/systems/progress-enhancement.js"></script>
+    
+    <!-- News Ticker Data -->
+    <script src="js/data/news-daily.js"></script>
+    <script src="js/data/news-interactions.js"></script>
+    <script src="js/data/news-mysteries.js"></script>
+    <script src="js/data/news-revelations.js"></script>
+
+    <!-- Existing Systems -->
+    <script src="js/systems/minigames.js"></script>
+    <!-- Arena System - Modularized (Browser Compatible) -->
+    <script src="js/systems/arena-data.js"></script>
+    <script src="js/systems/arena-ui.js"></script>
+    <script src="js/systems/arena-logic.js"></script>
+    <script src="js/systems/news-ticker.js"></script>
+    
+    <!-- All Character Data -->
+    <!-- Szafran - Multi-file structure -->
+    <script src="js/characters/szafran/szafran-base.js"></script>
+    <script src="js/characters/szafran/szafran-story-1-5.js"></script>
+    <script src="js/characters/szafran/szafran-story-6-9.js"></script>
+    <script src="js/characters/szafran/szafran-story-10-14.js"></script>
+    
+    <!-- Single-file characters -->
+    <script src="js/characters/alina.js"></script>
+    <script src="js/characters/bastet.js"></script>
+    <script src="js/characters/duo_kroliczki.js"></script>
+    
+    <!-- Furia - Multi-file structure -->
+    <script src="js/characters/furia/furia-base.js"></script>
+    <script src="js/characters/furia/furia-story-1-5.js"></script>
+    <script src="js/characters/furia/furia-story-6-10.js"></script>
+    <script src="js/characters/furia/furia-story-11-13.js"></script>
+    
+    <!-- Momo - Multi-file structure -->
+    <script src="js/characters/momo/momo-base.js"></script>
+    <script src="js/characters/momo/momo-story-1-5.js"></script>
+    <script src="js/characters/momo/momo-story-6-9.js"></script>
+    <script src="js/characters/momo/momo-arena.js"></script>
+    
+    <!-- Lucja - Multi-file structure -->
+    <script src="js/characters/lucja/lucja-base.js"></script>
+    <script src="js/characters/lucja/lucja-story-1-5.js"></script>
+    <script src="js/characters/lucja/lucja-story-6-9.js"></script>
+    <script src="js/characters/lucja/lucja-story-10-14.js"></script>
+    <script src="js/characters/lucja/lucja-story-15-17.js"></script>
+    
+    <!-- Single-file characters -->
+    <script src="js/characters/mara.js"></script>
+    <script src="js/characters/mimi.js"></script>
+    <script src="js/characters/mina.js"></script>
+    <script src="js/characters/promilia.js"></script>
+    <script src="js/characters/zmora.js"></script>
+    
+    <!-- Character Loader Utility -->
+    <script src="js/utils/character-loader.js"></script>
+    
+    <!-- Main Entry Point -->
+    <script src="js/main.js"></script>
+    
+    <!-- Debug Status -->
+    <script>
+        setTimeout(() => {
+            console.log('📊 Game Load Status:', window.gameLoadStatus);
+            console.log('📋 Available globals:', Object.keys(window).filter(k => 
+                ['gameData', 'domElements', 'gameUtils', 'gameModules', 'gameCore'].includes(k)
+            ));
+            
+            if (window.gameLoadStatus.errors.length > 0) {
+                console.error('💥 Script loading errors detected!');
+                window.gameLoadStatus.errors.forEach(error => {
+                    console.error(`   ${error.file}: ${error.error}`);
+                });
+            }
+        }, 100);
+        
+        // Fallback: if loading screen is still visible after 10 seconds, show debug info
+        setTimeout(() => {
+            const loadingScreen = document.getElementById('loading-screen');
+            if (loadingScreen && loadingScreen.style.display !== 'none') {
+                console.error('⚠️ Loading screen stuck! Showing debug info...');
+                
+                loadingScreen.innerHTML = `
+                    <div class="text-center max-w-2xl mx-auto p-8">
+                        <h2 class="text-2xl font-bold mb-4">🔧 Debug Information</h2>
+                        <div class="text-left bg-black/50 p-4 rounded mb-4">
+                            <p><strong>Errors:</strong> ${window.gameLoadStatus?.errors?.length || 0}</p>
+                            <p><strong>Game Data:</strong> ${window.gameData ? '✅' : '❌'}</p>
+                            <p><strong>DOM Elements:</strong> ${window.domElements ? '✅' : '❌'}</p>
+                            <p><strong>Game Modules:</strong> ${window.gameModules ? '✅' : '❌'}</p>
+                            <p><strong>Character Data:</strong> ${window.characterData ? Object.keys(window.characterData).length + ' characters' : '❌'}</p>
+                        </div>
+                        <button onclick="console.log('🔍 Full debug:', {gameLoadStatus: window.gameLoadStatus, gameData: !!window.gameData, domElements: !!window.domElements}); alert('Check console for details')" class="btn-primary mr-4">
+                            Show Console Debug
+                        </button>
+                        <button onclick="location.reload()" class="btn-secondary">
+                            Reload Game
+                        </button>
+                    </div>
+                `;
+            }
+        }, 10000);
+    </script>
+</body>
+</html>
